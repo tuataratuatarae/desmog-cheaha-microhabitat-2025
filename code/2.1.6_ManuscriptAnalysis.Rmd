@@ -1,0 +1,739 @@
+---
+title: "Committee Report Fall 2023"
+author: "Nick Chang"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    theme: flatly
+    toc: yes
+    toc_float: true
+    code_folding: hide
+editor_options: 
+  markdown: 
+    wrap: 72
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# package for data manipulation and visualization
+library(tidyverse)
+# package to fit generalized linear mixed models
+library(glmmTMB)
+# package to create interactive plots to more easily explore data
+library(plotly)
+#package to read in data from excel spreadsheets
+library(readxl)
+#DHARMa residuals for glmmTMB
+library(DHARMa)
+#regression tables
+library(sjPlot)
+# conditional r2
+library(performance)
+
+library(car)
+#cleaning dates
+library(lubridate)
+
+library(MuMIn)
+
+library(lmtest)
+
+#for analyzing compositional data - using aitchison's PCA for substrate
+library(compositions)
+
+library(ggbiplot)
+
+```
+
+
+
+```{r}
+
+#set wd
+setwd("~/Downloads/GitHub/desmog-cheaha-microhabitat-2025/code")
+
+# importing band-level data
+bands = read.csv("../data/bands_2025-01-29.csv")
+# importing plot-level data
+plots = read.csv("../data/plots_2025-01-29.csv")
+# importing data about individual organisms
+points = read.csv("../data/points_2025-01-29.csv") 
+# importing data about capture points (by rock instead of by salamander)
+pointsWide = read.csv("../data/pointsWide_2024-12-22.csv")
+
+# Creating a vector of seal salamander streams that we can use to filter later
+sealStreams = c("STRM07", "STRM06", "STRM10", "STRM01", "STRM04", "STRM08", "STRM02")
+
+
+AnonLabels = c(
+  "HMR-1" = "Stream 1", 
+  "HEAT-3" = "Stream 2", 
+  "SHURE-1" = "Stream 3",
+  "FOAM-1" = "Stream 4", 
+  "VICT-1" = "Stream 5", 
+  "DEEP-1" = "Stream 6", 
+  "CCC-1" = "Stream 7", 
+  "WEEP-1" = "Stream 8", 
+  "HAR-1" = "Stream 9", 
+  "FERN-1" = "Stream 10", 
+  "RICH-2" = "Stream 11"
+)
+
+#creating a subset of bands that are from streams that had seal salamanders
+ssBands = bands %>% filter(StrmID %in% sealStreams)
+
+#creating a color palette
+cols = c('CHOW' = '#0c9896', 
+        'PSRUB' = "#C95945",
+         "ECIR" = "#E6BC52",
+         'EGUT' = '#E68E1C', 
+         "DCHE" = "#5D695C", 
+          #"DCHE" = "#70665e",
+          "DPER" = "#81705c",
+          #'DPER' = '#AFA060', 
+         'CAM' = "#c7a891", 
+        'VAC' = "#90AA86"
+         )
+
+colsBi = c('1' = "#5D695C", 
+           '0' = "#90AA86")
+```
+
+# Introduction
+
+This markdown file contains analyses for my Honors Thesis on the
+Talladega seal salamander (*Desmognathus cheaha*) which I have conducted
+after consultation with my Thesis committee on November 27th, 2023.
+
+
+
+
+# Microhabitat
+
+At the microhabitat scale, I am interested in what factors predict
+microhabitat selection by seal salamanders, particularly whether they
+are actively selecting different cover objects.
+
+-   For this dataset, I will be evaluating using binomial
+    presence/absence models because while there were a few rocks that
+    had multiple seal salamanders under them, that number was very low.
+-   I will be filtering my data to only be for streams that have seals
+    in them, because I have reason to suspect that there are water
+    quality parameters influencing the presence/absence of seal
+    salamanders (notably, temperature variation)
+-   I will also be filtering my data to only include observations that
+    were underneath rocks or wood. Two observations of seal salamanders
+    were in burrows, which differ fundamentally in terms of
+    microhabitat. In addition, we are dropping observations from
+    leafpacks and individuals in the open because there were none of
+    these observations with seal salamanders.
+-   I am also opting not to include a model that compares habitat use by
+    seal salamanders to other species--I am investigating the use of PCA
+    to describe habitat use across species re Dr. Martin's suggestion.
+-   I will be running logistic regressions where:
+    -   1 = seal salamander
+    -   0 = no seal salamander BUT may contain other salamanders or
+        crayfish
+
+## Microhabitat data transformation
+
+I need to make a few changes to the dataset to perform these analyses.
+Below, I am going to:\
+\* create a `rocky` substrate composite by adding the percent cover of
+gravel and rock. \* create a binary response variable of points that
+have seals or are completely vacant (not going to end up using this but
+leaving it in the dataset in case it's useful). \* Creating a binary
+response variable to compare places with seal salamanders to places with
+other salamanders. \* Creating a binary response variable that compares
+places that had any salamander to ones that were vacant
+
+In addition, I am creating a subset of the data (`pWS`) which filters
+the microhabitat dataset so that my analyses are only include points
+from streams where we know that seal salamanders occur. This is because
+we believe there are likely some water quality parameters affecting the
+ability of other streams to support seal salamanders (see plotwise
+models), and that there are likely suitable cover items in these streams
+that don't have seals because the habitat isn't suitable for other
+reasons.\
+I am also filtering to only include observations where the cover type
+was rock or wood, because there are some observations of seals in
+burrows and I feel that the substrate data isn't comparable.
+
+```{r}
+
+pointsWide = pointsWide %>% 
+
+  #creating a composite of rocky substrate
+  mutate(rocky = per_grav + per_rock) %>%
+
+  #creating a response variable for seal vs. fully vacant points
+  mutate(sealVac = NA) %>%
+  mutate(sealVac = ifelse(Occupied == 0, 0, sealVac)) %>%
+  mutate(sealVac = ifelse(DCHE != 0, 1, sealVac)) %>%
+
+  #creating a response variable to compare seals vs. other salamanders
+  mutate(sealSal = NA) %>%
+  mutate(sealSal = ifelse(salCount > 0, 0, sealSal)) %>%
+  mutate(sealSal = ifelse(DCHE != 0, 1, sealSal)) %>%
+  
+  #creating a response variable for the presence of dusky salamanders
+  mutate(duskPres = ifelse(DPER >0, 1, 0)) %>%
+  
+  #creating a response variable for the presence of 2-lined salamanders
+  mutate(cirrPres = ifelse(ECIR > 0, 1, 0 )) %>%
+  
+  #creating a respnse variable to compare sal vs. non-sal points
+  mutate(salVac = ifelse(salCount > 0 & crayCount == 0, 1, 0)) %>%
+  
+  mutate(nonsealSalCount = SAL + ECIR + DPER +PSRUB + D + EGUT, 
+         nonsealOccCount = occupantCount-DCHE) %>%
+  mutate(roommate = ifelse(nonsealOccCount >=1, "roommate", "no roommate")) %>%
+  mutate(sealStream = ifelse(StrmID %in% c(sealStreams), 1, 0))
+
+```
+
+
+
+### Dealing with stream distance
+
+*Sorting things by terrestrial/margin/stream* We are going to create a
+categorical variable that sorts salamanders into a
+terrestrial/margin/stream variable based on where they were found
+in/around the stream. Here, we are going to create some rules that say:
+
+-   Any point with a water depth of 1cm or less AND anything wthin 50cm
+    of water is on the margin
+
+-   Anything with a distance to water greater than 50cm is considered
+    terrestrial
+
+-   Anything with a deeper water depth is considered in the stream
+
+50cm is considered the cutoff for terrestrial vs. marginal habitat
+because when we do our band-level quadrats for marginal habitat we try
+to center them on the edge of the stream with 50cm in the stream and
+50cm out.
+
+In addition, we are going to create a distDepth variable that combines
+the stream distance and water depth variables by subtracting depth from
+distance to water so that depth is a negative value.
+
+```{r}
+pointsWide = pointsWide %>%
+  mutate(hab = ifelse(distWater > 50, "terrestrial", NA)) %>%
+  mutate(hab = ifelse(cmDepth > 1, "stream", hab)) %>%
+  mutate(hab = ifelse(is.na(hab) == T, "margin", hab)) %>%
+  mutate(hab = as.factor(hab)) %>%
+  mutate(distDepth = distWater - cmDepth)
+# I am going to create a color palette to make this easier to interpret
+habCols = c("stream" = "#9BC4BC", "margin" = "#4B5043", "terrestrial" = "#598218")
+
+```
+
+
+
+
+## Filtering to seal streams
+
+
+```{r}
+
+#filtering pointsWide to only include points from streams where seal salamanders are present
+pWS = pointsWide %>%
+  filter(StrmID %in% sealStreams) %>% 
+         #filtering to only include observations that were under rock or wood
+  filter(CoverType %in% c("R", "W")) 
+
+# pointsWide %>%
+#   filter(StrmID %in% sealStreams) %>% 
+#   group_by(CoverType) %>%
+#   summarize(count = n())
+
+
+# pWS %>% group_by(sealPres) %>% summarize(count = n())
+
+
+```
+
+
+
+
+## Fitting a null model
+
+This is how I figured out how to get the marginal/conditional r2: https://github.com/glmmTMB/glmmTMB/issues/169 
+```{r}
+mic_0 = glmmTMB(sealPres ~ (1|StrmID), data = pWS, family = "binomial")
+summary(mic_0)
+
+resid_mic_0 = simulateResiduals(mic_0)
+plot(resid_mic_0)
+
+tab_model(mic_0)
+
+confint(mic_0)
+summary(mic_0)
+
+exp(-2.1535)
+
+performance::r2(mic_0)
+
+```
+
+
+# Microhabitat use by Seal Salamanders
+
+## How does particle/pore space and the accumulation of sediment under cover objects affect presence/absence of seal salamanders?
+
+From being in the field, it seems like jumbles of rock tend to make poor
+habitat, so I am wondering whether/how that is reflected in the data. I
+am also going to separately analyze rock and gravel since it seems like
+the difference in particle size would be important. We're including an
+interaction parameter for habitat type since there's a thought that
+gravelly terrestrial substrates will be less suitable, though the
+interaction doesn't seem to be significant.
+
+sealPres \~ (%rock + %gravel) \* hab + (1\|StrmID), data = pWS
+
+```{r}
+pWS %>% ggplot(aes(x = rocky, y = sealPres)) + 
+  geom_jitter(aes(col = hab), height = .1) + 
+  scale_color_manual(values = habCols) + 
+  stat_smooth(method = "glm", method.args = list(family = "binomial")) + 
+  theme_bw()
+```
+
+```{r}
+mic_1.1 = glmmTMB(sealPres ~ rocky + hab + (1|StrmID), data = pWS, family = "binomial")
+summary(mic_1.1)
+```
+
+The interaction with habitat seems to be very close to 1, so I am also
+going to fit a version of the model without the interaction term.
+
+```{r}
+mic_1.1 = glmmTMB(sealPres ~ rocky + hab + (1|StrmID), data = pWS, family = "binomial")
+summary(mic_1.1)
+
+resid_mic_1.1 = simulateResiduals(mic_1.1)
+plot(resid_mic_1.1)
+
+tab_model(mic_1.1)
+
+confint(mic_1.1)
+
+
+
+AICc(mic_1.1)
+
+exp( -18.672576852)
+```
+
+### Isolating out the gravel variable
+
+When I was doing some of the diagnostic visualizations, it did look a
+bit like there was an interesting relationship between seal salamander
+presence and the amount of gravel under the rocks.
+
+sealPres \~ (%gravel) * hab + (1\|StrmID)
+
+```{r}
+pWS %>% ggplot(aes(x = per_grav, y = sealPres)) + 
+  geom_jitter(aes(col = hab), height = .1) + 
+  scale_color_manual(values = habCols) + 
+  stat_smooth(method = "glm", method.args = list(family = "binomial")) + 
+  theme_bw()
+```
+
+```{r}
+mic_1.2 = glmmTMB(sealPres ~ per_grav * hab + (1|StrmID)
+                    , data = pWS, family = "binomial")
+summary(mic_1.2)
+
+resid_mic_1.2 = simulateResiduals(mic_1.2)
+plot(resid_mic_1.2)
+
+```
+
+When we compare points where there were seal salamanders or no
+salamanders, we do not find a significance.
+
+Dr. Keogh noted that there is lots of random effects variance in this model, so she asked me to pull out StrmID as a fixed effect, which I show here. Deepdene and Fernbank appear to differ from CCC (the stream that the rest are being compared to).
+
+```{r}
+mic_1.2.1 = glmmTMB(sealPres ~ per_grav * hab + StrmID
+                    , data = pWS, family = "binomial")
+summary(mic_1.2.1)
+
+resid_mic_1.2.1 = simulateResiduals(mic_1.2.1)
+plot(resid_mic_1.2.1)
+
+```
+
+### Isolating the rock cover variable
+
+I'm also going to have a look at how this plays out when we isolate %
+rock as a variable. When I run models with each of these three datasets,
+we don't significance in any of them.
+
+sealVac \~ (%rock) + (1\|StrmID)
+
+```{r}
+pWS %>% ggplot(aes(x = per_rock, y = sealPres)) + 
+  geom_jitter(aes(col = hab), height = .1) + 
+  scale_color_manual(values = habCols) + 
+  stat_smooth(method = "glm", method.args = list(family = "binomial")) + 
+  theme_bw()
+```
+
+When I run this model I get a convergence issue (which is weird because it was working last week), so I need to investigate this further. 
+
+```{r}
+
+
+mic_1.3 = glmmTMB(sealPres ~ per_rock * hab + (1|StrmID), data = pWS, family = "binomial")
+summary(mic_1.3)
+
+resid_mic_1.3 = simulateResiduals(mic_1.3)
+plot(resid_mic_1.3)
+
+
+```
+
+
+
+## How does the abundance of leaf litter affect cover object selection for seal salamanders?
+
+I'm interested in whether salamanders are selecting rocks based on the
+presence of leaf litter surrounding them. There were a number of rocks
+that we found which served as physical infrastructure around which leaf
+packs were formed, and presumably the presence of leaf litter allows for
+places where salamanders are able to forage and find cover with a ton of
+new surface area to chill out in.
+
+sealPres \~ (%litter) + (1\|StrmID)
+
+```{r}
+pWS %>% ggplot(aes(x = per_litter, y = sealPres)) + 
+  geom_jitter(aes(col = hab), height = .1) + 
+  scale_color_manual(values = habCols) + 
+  stat_smooth(method = "glm", method.args = list(family = "binomial")) + 
+  theme_bw()
+```
+
+```{r}
+mic_2.1 = glmmTMB(sealPres ~ per_litter + (1|StrmID), data = pWS, family = "binomial")
+summary(mic_2.1)
+
+AICc(mic_2.1)
+
+
+resid_mic_2.1 = simulateResiduals(mic_2.1)
+plot(resid_mic_2.1)
+
+tab_model(mic_2.1)
+
+confint(mic_2.1)
+
+#obtaining the conditional and marginal r2
+performance::r2(mic_2.1)
+
+```
+
+## How does the distribution of cover objects of various sizes in and around the stream affect the presence/absence of salamanders?
+
+sealVac \~ coverObjArea \* hab + (1\|StrmID)
+
+hab = stream, margin, terrestrial
+
+For the model comparing seals points to vacant points in the stream, we
+see that there is a strong relationship between occupancy and cover
+object dimensions, but that there is no significant relationship for
+each of the habitat type parameters.
+
+```{r}
+
+
+# defining the positions that I would like these variables to be in so that they show up correctly int he plots below
+positions = c("terrestrial", "margin", "stream")
+
+pWS %>% 
+  ggplot() + 
+  geom_bar(aes(x = hab, fill = hab)) + 
+  scale_fill_manual(values = habCols) + 
+  scale_x_discrete(limits = positions) + 
+  theme_bw() + 
+  
+  facet_wrap(~sealVac)
+
+
+```
+
+```{r}
+pWS %>% ggplot(aes(x = covArea, y = sealVac)) + 
+  geom_jitter(aes(col = hab), height = .1) + 
+  scale_color_manual(values = habCols) + 
+  stat_smooth(method = "glm", method.args = list(family = "binomial")) + 
+  theme_bw()
+```
+
+```{r}
+
+mic_3.1 = glmmTMB(sealPres ~ covArea + hab + (1|StrmID), data = pWS, family = "binomial")
+summary(mic_3.1)
+
+AICc(mic_3.1)
+
+
+resid_mic_3.1 = simulateResiduals(mic_3.1)
+plot(resid_mic_3.1)
+
+
+confint(mic_3.1)
+
+tab_model(mic_3.1)
+
+```
+
+### simplifying to only analyze marginal vs. stream habitat
+We are thinking that perhaps stream/margin will become significant if we remove terrestrial habitat as a predictor and focus on these two... however as you can see below this is not the case lmao
+
+```{r}
+
+# points2 = points %>% filter(StrmID %in% sealStreams) %>%  
+#   mutate(hab = ifelse(distWater > 50, "terrestrial", NA)) %>%
+#   mutate(hab = ifelse(cmDepth > 1, "stream", hab)) %>%
+#   mutate(hab = ifelse(is.na(hab) == T, "margin", hab)) %>%
+#   mutate(hab = as.factor(hab)) %>%
+#   group_by(Species, hab) %>%
+#   summarize(x = n())
+
+
+pWS2 = pWS %>% filter(hab %in% c("stream", "margin"))
+
+mic_3.2 = glmmTMB(sealPres ~ covArea + hab + (1|StrmID), data = pWS2, family = "binomial")
+summary(mic_3.2)
+
+```
+
+
+
+## How does the presence of salamanders or crayfish affect the cover selection of seal salamanders?
+
+Here, we test whether the presence of other salamanders affects the
+presence of seal salamanders under cover items. Since larger cover items
+are hypothetically able to support additional individuals, I am going to
+include cover area as an interaction effect
+
+```{r}
+pWS %>% ggplot(aes(x = nonsealSalCount, y = sealPres)) + 
+  geom_jitter(aes(col = hab), height = .1) + 
+  scale_color_manual(values = habCols) + 
+  stat_smooth(method = "glm", method.args = list(family = "binomial")) + 
+  facet_wrap(~as.factor(nonsealSalCount)) + 
+  theme_bw()
+```
+
+Another think that I'm thinking about is because larger cover objects are probably able to provide suitable habitat for multiple individual salamanders, how this factors into the suitability of larger rocks. 
+
+```{r}
+pWS %>% ggplot(aes(x = covArea, y = sealPres)) + 
+  geom_jitter(aes(col = as.factor(nonsealSalCount)), height = .1) + 
+  #scale_color_manual(values = habCols) + 
+  stat_smooth(method = "glm", method.args = list(family = "binomial")) + 
+  theme_bw()
+```
+
+`roommate` is a categorical variable in which `roommate[roomate]` designates the presence of an additional salamander species or crayfish and `roommate[no roommate]` designates the absence of an additional salamander species or crayfish
+
+```{r}
+
+mic_4.2 = glmmTMB(sealPres ~ roommate * covArea + (1|StrmID), data = pWS, family = "binomial")
+summary(mic_4.2)
+
+
+AICc(mic_4.2)
+
+resid_mic_4.2 = simulateResiduals(mic_4.2)
+plot(resid_mic_4.2)
+
+tab_model(mic_4.2)
+
+performance::r2(mic_4.2)
+
+confint(mic_4.2)
+
+fixef(mic_4.2)
+
+shapiro.test(residuals(mic_4.2))
+
+
+car::Anova(mic_4.2)
+
+simple_4.2 = glm(sealPres ~ roommate * covArea, data = pWS, family = "binomial")
+
+plot(simple_4.2)
+
+```
+
+
+Obtaining the Odds Ratio estimates for this model
+
+```{r}
+#roommate estimate: -1.0320674
+exp(-1.0320674)
+
+#cov area estimate:  0.0031035
+
+exp(0.0031035)
+
+#interaction estimate: -0.0018871 
+exp(-0.0018871 )
+
+```
+
+
+```{r}
+
+mic_4.3 = glmmTMB(sealPres ~ roommate + covArea + (1|StrmID), data = pWS, family = "binomial")
+summary(mic_4.3)
+
+AICc(mic_4.3)
+
+
+resid_mic_4.3 = simulateResiduals(mic_4.3)
+plot(resid_mic_4.3)
+
+tab_model(mic_4.3)
+
+confint(mic_4.3)
+
+fixef(mic_4.3)
+
+exp(c( -2.422635, -2.233670, 0.001897))
+
+
+```
+
+
+```{r}
+mic_4.4 = glmmTMB(DPER ~ DCHE, data = pWS, family = "binomial")
+
+
+```
+
+## Posthoc tests for microhabitat models
+```{r}
+
+anova(mic_4.2, mic_0, test = "Chisq")
+
+
+anova(mic_4.2, mic_4.3, test = "Chisq")
+
+```
+
+------------------------------------------------------------------------
+
+# Comparative microhabitat analyses for D. perlapsus
+
+We need to clean up some of the microhabitat data for D perlapsus so that we do not include certain observations (to simplify our levels etc)
+
+We are removing observations which were not from wood or rocks, and we are also filtering to only include microhabitat points from the stream or marginal habitat. 
+```{r}
+pointsWide %>%
+  group_by(as.factor(duskPres), hab) %>%
+  dplyr::summarize(n())
+
+
+
+duskData = pointsWide %>% filter(CoverType %in% c("W", "R") & hab %in% c("stream", "margin"))
+
+duskData %>% group_by(as.factor(duskPres)) %>% dplyr::summarize(n())
+
+```
+
+Next, we need to join band-level data on cover object density to include this factor as a fixed effect
+```{r}
+df_covDens = bands %>% select(SubStrmID, covCount, areaSearched) %>%
+  mutate(covDens = covCount/areaSearched)
+
+
+duskData = duskData %>% left_join(df_covDens, by = "SubStrmID")
+
+duskData = duskData %>% mutate(bandNum = str_sub(SubStrmID, -1))
+
+```
+
+## null model
+```{r}
+
+dusk_0 = glmmTMB(duskPres ~ + (1|StrmID/bandNum), data = duskData, family = "binomial")
+
+
+AICc(dusk_0)
+```
+
+## habitat type 
+```{r}
+dusk_1.1 = glmmTMB(duskPres ~  hab*sealStream + covDens + (1|StrmID/bandNum), data = duskData, family = "binomial")
+summary(dusk_1.1)
+
+
+resid_dusk_1.1 = simulateResiduals(dusk_1.1)
+plot(resid_dusk_1.1)
+
+AICc(dusk_1.1)
+```
+
+## rocky substrate
+
+```{r}
+dusk_1.2 = glmmTMB(duskPres ~  rocky*sealStream + covDens + (1|StrmID/bandNum), data = duskData, family = "binomial")
+summary(dusk_1.2)
+
+resid_dusk_1.2 = simulateResiduals(dusk_1.2)
+plot(resid_dusk_1.2)
+
+AICc(dusk_1.2)
+```
+
+## Abundance of leaf litter
+```{r}
+
+dusk_2.1 = glmmTMB(duskPres ~ per_litter * sealStream + covDens + (1|StrmID/bandNum), data = duskData, family = "binomial")
+summary(dusk_2.1)
+
+resid_dusk_2.1 = simulateResiduals(dusk_2.1)
+plot(resid_dusk_2.1)
+
+AICc(dusk_2.1)
+```
+
+Presence of leaf litter is not significant
+
+## Distribution of cover objects of various sizes
+```{r}
+
+dusk_3.1 = glmmTMB(duskPres ~ covArea*sealStream  + (1|StrmID/bandNum), data = duskData, family = "binomial")
+summary(dusk_3.1)
+
+resid_dusk_3.1 = simulateResiduals(dusk_3.1)
+plot(resid_dusk_3.1)
+
+AICc(dusk_3.1)
+```
+
+## Community dynamics
+```{r}
+dusk_4.1 = glmmTMB(duskPres ~ covArea + sealPres + (1|StrmID), data = pWS, family = "binomial")
+summary(dusk_4.1)
+
+
+resid_dusk_4.1 = simulateResiduals(dusk_4.1)
+plot(resid_dusk_4.1)
+
+AICc(dusk_4.1)
+```
+
+
+

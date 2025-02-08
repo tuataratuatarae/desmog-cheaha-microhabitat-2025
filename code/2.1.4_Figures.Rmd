@@ -1,0 +1,1400 @@
+---
+title: "Committee Report Fall 2023"
+author: "Nick Chang"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    theme: flatly
+    toc: yes
+    toc_float: true
+    code_folding: hide
+editor_options: 
+  markdown: 
+    wrap: 72
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+#insetwd("/Users/nicholaschang/Downloads/GitHub/desmognathus/code")
+# package for data manipulation and visualization
+library(tidyverse)
+# package to fit generalized linear mixed models
+library(glmmTMB)
+# package to create interactive plots to more easily explore data
+#library(plotly)
+#package to read in data from excel spreadsheets
+library(readxl)
+#DHARMa residuals for glmmTMB
+library(DHARMa)
+
+library(plotly)
+
+library(cowplot)
+
+# importing band-level data
+bands = read.csv("../data/bands2.csv")
+# importing plot-level data
+plots = read.csv("../data/plots3_2024-02-27.csv")
+# importing data about individual organisms
+points = read.csv("../data/points.csv") 
+# importing data about capture points (by rock instead of by salamander)
+pointsWide = read.csv("../data/pointsWide.csv")
+
+# Creating a vector of seal salamander streams that we can use to filter later
+sealStreams = c("CCC-1", "DEEP-1", "FERN-1", "HMR-1", "FOAM-1", "WEEP-1", "HEAT-3")
+
+#creating a subset of bands that are from streams that had seal salamanders
+ssBands = bands %>% filter(PlotCode %in% sealStreams)
+
+#creating a color palette
+cols = c('CHOW' = '#0c9896', 
+        'PSRUB' = "#C95945",
+         "ECIR" = "#E6BC52",
+         'EGUT' = '#E68E1C', 
+         "DCHE" = "#5D695C", 
+          #"DCHE" = "#70665e",
+          "DPER" = "#81705c",
+          #'DPER' = '#AFA060', 
+         'CAM' = "#c7a891", 
+        'VAC' = "#90AA86"
+         )
+
+colsBi = c('1' = "#5D695C", 
+           '0' = "#90AA86"
+           #'0' = "#2D82B7"
+           )
+
+colsTri = c('Seal Salamander' = "#5D695C", 
+            "Vacant Point" = "#2D82B7",
+           #'Vacant Point' = "#90AA86", 
+           'Other Occupant' = "#c7a891")
+```
+
+# Introduction
+
+This markdown file contains analyses for my Honors Thesis on the
+Talladega seal salamander (*Desmognathus cheaha*) which I have conducted
+after consultation with my Thesis committee on November 27th, 2023.
+
+# Microhabitat
+
+At the microhabitat scale, I am interested in what factors predict
+microhabitat selection by seal salamanders, particularly whether they
+are actively selecting different cover objects.
+
+-   For this dataset, I will be evaluating using binomial
+    presence/absence models because while there were a few rocks that
+    had multiple seal salamanders under them, that number was very low.
+-   I will be filtering my data to only be for streams that have seals
+    in them, because I have reason to suspect that there are water
+    quality parameters influencing the presence/absence of seal
+    salamanders (notably, temperature variation)
+-   I will also be filtering my data to only include observations that
+    were underneath rocks or wood. Two observations of seal salamanders
+    were in burrows, which differ fundamentally in terms of
+    microhabitat. In addition, we are dropping observations from
+    leafpacks and individuals in the open because there were none of
+    these observations with seal salamanders.
+-   I am also opting not to include a model that compares habitat use by
+    seal salamanders to other species--I am investigating the use of PCA
+    to describe habitat use across species re Dr. Martin's suggestion.
+-   I will be running logistic regressions where:
+    -   1 = seal salamander
+    -   0 = no seal salamander BUT may contain other salamanders or
+        crayfish
+
+## Microhabitat data transformation
+
+I need to make a few changes to the dataset to perform these analyses.
+Below, I am going to:\
+\* create a `rocky` substrate composite by adding the percent cover of
+gravel and rock. \* create a binary response variable of points that
+have seals or are completely vacant (not going to end up using this but
+leaving it in the dataset in case it's useful). \* Creating a binary
+response variable to compare places with seal salamanders to places with
+other salamanders. \* Creating a binary response variable that compares
+places that had any salamander to ones that were vacant
+
+In addition, I am creating a subset of the data (`pWS`) which filters
+the microhabitat dataset so that my analyses are only include points
+from streams where we know that seal salamanders occur. This is because
+we believe there are likely some water quality parameters affecting the
+ability of other streams to support seal salamanders (see plotwise
+models), and that there are likely suitable cover items in these streams
+that don't have seals because the habitat isn't suitable for other
+reasons.\
+I am also filtering to only include observations where the cover type
+was rock or wood, because there are some observations of seals in
+burrows and I feel that the substrate data isn't comparable.
+
+```{r}
+
+pointsWide = pointsWide %>% 
+
+  #creating a composite of rocky substrate
+  mutate(rocky = per_grav + per_rock) %>%
+
+  #creating a response variable for seal vs. fully vacant points
+  mutate(sealVac = NA) %>%
+  mutate(sealVac = ifelse(Occupied == 0, 0, sealVac)) %>%
+  mutate(sealVac = ifelse(DCHE != 0, 1, sealVac)) %>%
+
+  #creating a response variable to compare seals vs. other salamanders
+  mutate(sealSal = NA) %>%
+  mutate(sealSal = ifelse(salCount > 0, 0, sealSal)) %>%
+  mutate(sealSal = ifelse(DCHE != 0, 1, sealSal)) %>%
+  
+  #creating a respnse variable to compare sal vs. non-sal points
+  mutate(salVac = ifelse(salCount > 0 & crayCount == 0, 1, 0)) %>%
+  
+  mutate(nonsealSalCount = SAL + ECIR + DPER +PSRUB + D + EGUT, 
+         nonsealOccCount = occupantCount-DCHE) %>%
+  #creating a categorical version of sealVac to use in figure captions
+   mutate(sealVacCat = "Other Occupant") %>%
+  mutate(sealVacCat= ifelse(Occupied == 0, "Vacant Point", sealVacCat)) %>%
+  mutate(sealVacCat = ifelse(DCHE !=0, "Seal Salamander", sealVacCat))
+
+  
+
+#filtering pointsWide to only include points from streams where seal salamanders are present
+pWS = pointsWide %>%
+  filter(PlotCode %in% sealStreams) %>% 
+         #filtering to only include observations that were under rock or wood
+  filter(CoverType %in% c("R", "W")) 
+
+```
+
+### Dealing with stream distance
+
+*Sorting things by terrestrial/margin/stream* We are going to create a
+categorical variable that sorts salamanders into a
+terrestrial/margin/stream variable based on where they were found
+in/around the stream. Here, we are going to create some rules that say:
+
+-   Any point with a water depth of 1cm or less AND anything wthin 50cm
+    of water is on the margin
+
+-   Anything with a distance to water greater than 50cm is considered
+    terrestrial
+
+-   Anything with a deeper water depth is considered in the stream
+
+50cm is considered the cutoff for terrestrial vs. marginal habitat
+because when we do our band-level quadrats for marginal habitat we try
+to center them on the edge of the stream with 50cm in the stream and
+50cm out.
+
+In addition, we are going to create a distDepth variable that combines
+the stream distance and water depth variables by subtracting depth from
+distance to water so that depth is a negative value.
+
+```{r}
+pWS = pWS %>%
+  mutate(hab = ifelse(distWater > 50, "terrestrial", NA)) %>%
+  mutate(hab = ifelse(cmDepth > 1, "stream", hab)) %>%
+  mutate(hab = ifelse(is.na(hab) == T, "margin", hab)) %>%
+  mutate(hab = as.factor(hab)) %>%
+  mutate(distDepth = distWater - cmDepth)
+# I am going to create a color palette to make this easier to interpret
+habCols = c("stream" = "#9BC4BC", "margin" = "#4B5043", "terrestrial" = "#598218")
+
+
+#sals ISS: Sals in Seal Streams
+salsISS = points %>% filter(PlotCode %in% sealStreams) %>%
+  mutate(hab = ifelse(distWater > 50, "terrestrial", NA)) %>%
+  mutate(hab = ifelse(cmDepth > 1, "stream", hab)) %>%
+  mutate(hab = ifelse(is.na(hab) == T, "margin", hab)) %>%
+  mutate(hab = as.factor(hab)) %>%
+  mutate(distDepth = distWater - cmDepth)
+  
+
+```
+
+## How does particle/pore space and the accumulation of sediment under cover objects affect presence/absence of seal salamanders?
+
+From being in the field, it seems like jumbles of rock tend to make poor
+habitat, so I am wondering whether/how that is reflected in the data. I
+am also going to separately analyze rock and gravel since it seems like
+the difference in particle size would be important. We're including an
+interaction parameter for habitat type since there's a thought that
+gravelly terrestrial substrates will be less suitable, though the
+interaction doesn't seem to be significant.
+
+sealPres \~ (%rock + %gravel) \* hab + (1\|PlotCode), data = pWS
+
+```{r}
+rocky = pWS %>% ggplot(aes(x = rocky, y = sealPres)) + 
+  geom_jitter(aes(col = hab), height = .1) + 
+  scale_color_manual(values = habCols) + 
+ stat_smooth(method = "glm", method.args = list(family = "binomial"), 
+              alpha = 0.10, col = "#5D695C", fill = "#5D695C") + 
+  labs(title = "Seal salamander presence/absence vs. rocky substrate", 
+       subtitle = "Model: Seal Presence/Absence ~ % rocky substrate * habitat type + (1|Stream)", 
+       caption = "AIC = 184.6",
+       color = "Habitat Type") + 
+  ylab("Talladega Seal Salamander\nPresence/Absence") + 
+  xlab("Percent cover of rocky substrate\n (% cobble + % gravel)") + 
+  theme_bw() 
+  #theme(legend.position = "bottom") +
+
+rocky
+```
+
+
+```{r}
+mic_1.1 = glmmTMB(sealPres ~ rocky * hab + (1|PlotCode), data = pWS, family = "binomial")
+summary(mic_1.1)
+```
+
+The interaction with habitat seems to be very close to 1, so I am also
+going to fit a version of the model without the interaction term.
+
+```{r}
+mic_1.1 = glmmTMB(sealPres ~ rocky + hab + (1|PlotCode), data = pWS, family = "binomial")
+summary(mic_1.1)
+
+resid_mic_1.1 = simulateResiduals(mic_1.1)
+plot(resid_mic_1.1)
+```
+
+### Isolating out the gravel variable
+
+When I was doing some of the diagnostic visualizations, it did look a
+bit like there was an interesting relationship between seal salamander
+presence and the amount of gravel under the rocks.
+
+sealPres \~ (%gravel) * hab + (1\|PlotCode)
+
+```{r}
+pWS %>% ggplot(aes(x = per_grav, y = sealPres)) + 
+  geom_jitter(aes(col = hab), height = .1) + 
+  scale_color_manual(values = habCols) + 
+  stat_smooth(method = "glm", method.args = list(family = "binomial")) + 
+  theme_bw()
+```
+
+
+
+### Isolating the rock cover variable
+
+
+
+```{r}
+pWS %>% ggplot(aes(x = per_rock, y = sealPres)) + 
+  geom_jitter(aes(col = hab), height = .1) + 
+  scale_color_manual(values = habCols) + 
+  stat_smooth(method = "glm", method.args = list(family = "binomial")) + 
+  theme_bw()
+```
+
+
+
+## How does the abundance of leaf litter affect cover object selection for seal salamanders?
+
+I'm interested in whether salamanders are selecting rocks based on the
+presence of leaf litter surrounding them. There were a number of rocks
+that we found which served as physical infrastructure around which leaf
+packs were formed, and presumably the presence of leaf litter allows for
+places where salamanders are able to forage and find cover with a ton of
+new surface area to chill out in.
+
+sealPres \~ (%litter) + (1\|PlotCode)
+
+```{r}
+pWS %>% ggplot(aes(x = per_litter, y = sealPres)) + 
+  geom_jitter(aes(col = hab), height = .1) + 
+  scale_color_manual(values = habCols) + 
+  stat_smooth(method = "glm", method.args = list(family = "binomial")) + 
+  theme_bw()
+```
+
+
+
+## How does the distribution of cover objects of various sizes in and around the stream affect the presence/absence of salamanders?
+
+sealVac \~ coverObjArea \* hab + (1\|PlotCode)
+
+hab = stream, margin, terrestrial
+
+For the model comparing seals points to vacant points in the stream, we
+see that there is a strong relationship between occupancy and cover
+object dimensions, but that there is no significant relationship for
+each of the habitat type parameters.
+
+```{r}
+
+
+# defining the positions that I would like these variables to be in so that they show up correctly int he plots below
+positions = c("terrestrial", "margin", "stream")
+
+distr = pWS %>% 
+  ggplot() + 
+  geom_bar(aes(x = hab, fill = hab), show.legend = F) + 
+  scale_fill_manual(values = habCols) + 
+  scale_x_discrete(limits = positions) + 
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1), 
+        # Set fill to white and add a black border
+        strip.background = element_rect(fill = "white", color = "black"),  
+        strip.placement = "outside") + 
+  ylab("Count") + 
+  xlab("Cover Item Position") + 
+  labs(title = "Spatial Distribution of Cover Objects by Occupant Identity") + 
+  facet_wrap(~sealVacCat)
+
+
+distr
+
+
+pos2 = c("Seal Salamander", "Other Occupant")
+
+distr2 = pWS %>% transform(sealVacCat = factor(sealVacCat, pos2)) %>%
+  filter(sealVacCat != "Vacant Point") %>%
+  ggplot() + 
+  geom_bar(aes(x = hab, fill = hab), show.legend = F) + 
+  scale_fill_manual(values = habCols) + 
+  scale_x_discrete(limits = positions) + 
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1), 
+        # Set fill to white and add a black border
+        strip.background = element_rect(fill = "white", color = "black"),  
+        strip.placement = "outside", 
+         plot.title = element_text(size = 18),       # Adjust title font size
+  plot.caption = element_text(size = 12)  ) + 
+  ylab("Count of Cover Objects") + 
+  xlab("Cover Item Position") + 
+  labs(title = "Spatial Distribution of Cover Objects used\nby Seal Salamanders")+
+  facet_wrap(~sealVacCat)
+
+distr2  + theme( text = element_text(size = 12, family = "Times"))
+
+
+```
+
+
+### Visualizations of distribution by species
+```{r}
+
+distVis = salsISS %>% 
+  mutate(Species = ifelse(Species == "CHOW", "CAM", Species)) %>%
+  group_by(Species) %>%
+  mutate(spCount = n()) %>%
+  ungroup() %>%
+  group_by(Species, hab) %>%
+  mutate(habProp = n() / spCount) %>%
+  ungroup()
+
+
+salsISS2 = salsISS %>% filter(Species %in% c("DCHE", "DPER"))
+
+  salsISS %>% group_by(Species) %>%
+    summarize(n())
+```
+
+#FΙGURE 12: STACKED BARPLOTS SHOWING THE DISTRIBUTION ACROSS HABITAT TYPES OF SALAMANDERS AND CRAYFISH BY SPECIES
+
+```{r}
+
+
+FIG12 = distVis %>% filter(Species %in% c("CAM", "DCHE", "DPER", "ECIR")) %>%
+  ggplot(aes(x = Species, y = habProp, fill = factor(hab, levels = c("stream", "margin", "terrestrial")))) +
+  geom_bar(stat = "identity", position = "fill",
+           aes(col = factor(hab, levels = c("stream", "margin", "terrestrial"))
+               )) + 
+  scale_fill_manual(values = habCols) + 
+    scale_color_manual(values = habCols) +
+  guides(color="none") + 
+  scale_y_continuous(labels = scales::percent) +
+  geom_text(aes(y = 1.05, label = paste("n = ", spCount))) + 
+  labs(fill = "") + 
+  theme_minimal() +
+  ylab("Proportion of Observed Animals") + 
+  title("Proportions of Commonly Observed Species Observed in Different Habitat Types") + 
+  theme(panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()) + theme( text = element_text(size = 12, family = "Times"))
+
+FIG12
+
+
+```
+
+
+```{r}
+habCov = pWS %>% ggplot(aes(x = covArea, y = sealPres)) + 
+  geom_jitter(aes(col = hab), height = .1) + 
+  scale_color_manual(values = habCols) + 
+  stat_smooth(method = "glm", method.args = list(family = "binomial"), 
+              alpha = 0.10, col = "#5D695C", fill = "#5D695C") +
+  labs(title = "Cover Object Area vs. Seal Salamander Presence/Absence", 
+       color = " ") + 
+  xlab(expression(paste("Cover Object Area (", cm^{2}, ")"))) + 
+  ylab("Seal Salamander Presence/Absence") + 
+  theme_bw()
+
+habCov
+```
+
+
+```{r}
+
+cov = pWS %>% ggplot(aes(x = covArea, y = sealPres)) + 
+  geom_jitter(col = "#5D695C", height = .1) + 
+  stat_smooth(method = "glm", method.args = list(family = "binomial"), 
+              alpha = 0.10, col = "#5D695C", fill = "#5D695C") +
+  labs(title = "Cover Object Area vs. Seal Salamander Presence/Absence", 
+       color = " ") + 
+  xlab(expression(paste("Cover Object Area (", cm^{2}, ")"))) + 
+  ylab("Seal Salamander Presence/Absence") + 
+  theme_bw() + theme( text = element_text(size = 14))
+
+cov
+```
+
+
+```{r}
+
+hist(log(pWS$covArea))
+
+x = pWS %>% ggplot(
+  aes(label = PointCode, x = as.factor(occupantCount), y = log10(covArea))) + 
+    geom_boxplot(fill = "transparent", outlier.shape = NA) + 
+  geom_jitter(aes(col = sealVacCat)) + 
+  scale_color_manual(values = colsTri) + 
+  theme_bw()
+
+ggplotly(x)
+
+
+pWS = pWS %>% mutate(occCountBinned = ifelse(occupantCount >=2, "2+", occupantCount)) %>%
+  mutate(nonsealOccCountBinned = ifelse(nonsealOccCount >=1, "1+", nonsealOccCount))
+
+
+pWS %>% ggplot(
+  aes(label = PointCode, x = as.factor(occCountBinned), y = log10(covArea))) + 
+  stat_boxplot(geom ='errorbar', aes(groups = sealVacCat)) + 
+  geom_boxplot(#fill = "white", 
+    #outlier.shape = NA, 
+    aes(fill = sealVacCat,)) + 
+  #geom_jitter(aes(col = sealVacCat, groups = sealVacCat)) + 
+  scale_fill_manual(values = colsTri) + 
+  xlab("Count of Salamanders or Crayfish") + 
+  ylab("Cover Object Area (Log 10 Transformed") + 
+  theme_bw()
+  
+
+pWS %>% 
+  ggplot(aes(x = as.factor(occCountBinned), 
+             y = log10(covArea))) + 
+  geom_boxplot(outlier.shape = NA, 
+               position = position_dodge(width = 1), 
+               aes(groups = sealVacCat)) + 
+  geom_jitter(#position = position_dodge(width = 1),  
+              aes(col = sealVacCat)) + 
+  scale_color_manual(values = colsTri) + 
+  xlab("Count of Salamanders or Crayfish") + 
+  ylab("Cover Object Area (Log 10 Transformed") + 
+  theme_bw()
+
+
+
+
+box = pWS %>% ggplot(aes(x = reorder(sealVacCat, covArea), y = log(covArea), groups = as.factor(occCountBinned))) + 
+    geom_boxplot(#outlier.shape = NA, 
+                 position = position_dodge2(width = 0.8, preserve = "single")) + 
+  geom_jitter(aes(col = sealVacCat), show.legend = F) + 
+  scale_color_manual(values = colsTri) + 
+    xlab(" ") + 
+  ylab("Cover Object Area\n(log transformed)") + 
+  labs(title = "Comparison of Cover Object Area Across Occupied\nand Unoccupied Cover Objects") + 
+  theme_bw()
+  
+  box
+  
+  
+new_labels <- c("Group A" = "Label for Group A", "Group B" = "Label for Group B")
+```
+
+
+
+```{r}
+
+mic_3.1 = glmmTMB(sealPres ~ covArea + hab + (1|PlotCode), data = pWS, family = "binomial")
+summary(mic_3.1)
+
+resid_mic_3.1 = simulateResiduals(mic_3.1)
+plot(resid_mic_3.1)
+
+```
+
+```{r}
+
+mic_3.2 = glmmTMB(sealPres ~ hab + (1|PlotCode), data = pWS, family = "binomial")
+summary(mic_3.2)
+
+resid_mic_3.1 = simulateResiduals(mic_3.1)
+plot(resid_mic_3.1)
+
+```
+
+
+
+## How does the presence of salamanders or crayfish affect the cover selection of seal salamanders?
+
+
+```{r}
+
+occupantLabs = c("0" = "No Additional Community Member", "1+" = "Presence of Add'l Salamander or Crayfish")
+  
+box2 = pWS %>% 
+  ggplot(aes(x = as.factor(sealPres), y = covArea)) + 
+    geom_boxplot(outlier.shape = NA
+                 #position = position _dodge2(width = 0.8, preserve = "single")
+                 ) + 
+  geom_jitter(col = "#5D695C", width = 0.1, alpha = 0.5)+ 
+ # scale_color_manual(values = colsBi) + 
+    xlab("Presence/Absence of Talladega Seal Salamanders") + 
+  ylab("Cover Object Area") + 
+  labs(title = "Area Comparison of Occupied and Unoccupied\nCover Objects") + 
+  theme_bw() + 
+  facet_wrap(~nonsealOccCountBinned, labeller = labeller(nonsealOccCountBinned = as_labeller(occupantLabs))) + 
+  theme(legend.position = "none", 
+        #removing the ugly gray box behind the facet labels
+        strip.background = element_rect(fill = "white", color = "black"), 
+        strip.placement = "outside")
+  
+box2 + 
+  theme( text = element_text(size = 14, face = "bold"))
+
+  
+```
+
+```{R}
+box3 = pWS %>% 
+  ggplot(aes(x = as.factor(nonsealOccCountBinned), 
+             y = covArea, 
+             groups = as.factor(nonsealOccCountBinned)
+             )
+         ) + 
+    geom_boxplot(outlier.shape = NA
+                 #position = position_dodge2(width = 0.8, preserve = "single")
+                 ) + 
+  geom_jitter(aes(col = as.factor(sealPres)), 
+              #show.legend = F
+              ) + 
+  scale_color_manual(values = colsBi) + 
+    xlab("Presence/Absence of Talladega Seal Salamanders") + 
+  ylab("Cover Object Area") + 
+  labs(title = "Area Comparison of Occupied and Unoccupied\nCover Objects") + 
+  theme_bw() + 
+  #facet_wrap(~sealPres) + 
+  theme(legend.position = "none", 
+        #removing the ugly gray box behind the facet labels
+        strip.background = element_rect(fill = "white", color = "black"), 
+        strip.placement = "outside")
+  
+box3 + 
+  theme( text = element_text(size = 14, face = "bold"))
+
+  
+```
+
+### stacked barplot
+
+```{r}
+
+
+
+commVis = pWS %>%
+  mutate(sealPresFct = as.factor(sealPres)) %>%
+  group_by(nonsealOccCountBinned) %>%
+  mutate(cooccCount = n()) %>%
+  ungroup() %>%
+  group_by(nonsealOccCountBinned, sealPresFct) %>%
+  mutate(PresProp = n()/cooccCount) %>%
+  ungroup()
+
+
+
+commVis2 = commVis %>% group_by(nonsealOccCountBinned, sealPresFct) %>%
+  summarize(PresProp = mean(PresProp), count = n())
+
+commVisLab = commVis %>%
+  group_by(nonsealOccCountBinned)%>%
+  summarize(cooccCount = mean(cooccCount), sealCount = sum(DCHE))
+
+
+commVisPercents = commVis %>% ggplot(aes(x = nonsealOccCountBinned, y = PresProp, fill = as.factor(sealPres))) + 
+  geom_col(position = "fill", aes(col = as.factor(sealPres))) + 
+    scale_y_continuous(labels = scales::percent) +
+  scale_fill_manual(values = colsBi) + 
+  scale_color_manual(values = colsBi) + 
+  guides(color="none") +
+  geom_text(aes(y = 1.05, label = paste("n = ", cooccCount))) + 
+   # geom_text(aes(y = 0.5, label = paste("n = ", sum(DCHE)))) + 
+  theme_minimal()  + 
+  labs(fill = "Presence/Absence of \nSeal Salamanders") + 
+  ylab("Proportion of Sampled Cover Items") + 
+  xlab("Presence/Absence of an Additional Community Member") + 
+  theme(panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()) +
+  theme( text = element_text(size = 14, face = "bold")) + 
+  theme(legend.position = "right")
+
+
+pWS %>% group_by(as.factor(sealPres), nonsealOccCountBinned)
+```
+
+# FIGURE 7: STACKED BARPLOTS SHOWING PROPORTION OF SAMPLED COVER ITEMS THAT HAD SALAMANDERS UNDER THEM IN CO-OCCURRENCE SCENARIOS
+```{r}
+commVisPercents2 = commVis2 %>% filter(as.factor(sealPresFct) == 1) %>%
+  ggplot(aes(x = nonsealOccCountBinned, y = PresProp)) + 
+  geom_bar(stat = "identity", fill = "#5D695C") + 
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_manual(values = colsBi) + 
+  scale_color_manual(values = colsBi) + 
+  guides(color="none") +
+  geom_text(aes(y = PresProp + 0.005, label = paste("n = ", count))) + 
+   # geom_text(aes(y = 0.5, label = paste("n = ", sum(DCHE)))) + 
+  theme_minimal()  + 
+  labs(title =expression(paste("Presence of ", italic("Desmognathus cheaha"), " Across Occupied and Unoccupied Cover")),  
+    fill = "Presence/Absence of \nSeal Salamanders") + 
+  ylab(expression(paste("Proportion of Sampled Cover Items Sheltering", italic("D. cheaha")))) + 
+  xlab("Presence/Absence of an Additional Community Member") + 
+  theme(panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()) +
+  theme( text = element_text(size = 12, family = "Times")) + 
+  theme(legend.position = "right")
+
+commVisPercents2
+
+
+```
+
+
+```{r}
+commVis %>% ggplot(aes(x = nonsealOccCountBinned, fill = as.factor(sealPres))) + 
+  geom_bar( aes(col = as.factor(sealPres))) + 
+  scale_fill_manual(values = colsBi) + 
+  scale_color_manual(values = colsBi) + 
+  guides(color="none") +
+  #geom_text(aes(y = cooccCount + 3, label = paste("n = ", cooccCount))) + 
+   # geom_text(aes(y = 0.5, label = paste("n = ", sum(DCHE)))) + 
+  theme_minimal()  + 
+  labs(fill = "Presence/Absence of \nSeal Salamanders") + 
+  ylab("Count of Sampled Cover Items") + 
+  xlab("Presence/Absence of an Additional Community Member") + 
+  theme(panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()) +
+  theme( text = element_text(size = 14, face = "bold")) + 
+  theme(legend.position = "right")
+
+```
+
+
+
+
+
+
+
+
+<<<<<<< Updated upstream
+FIGURE 6: LOGISTIC REGRESSION SHOWING SEAL/PRESENCE ABSENCE AS A FUNCTION OF COVER OBJECT AREA, FACETED BY CO-OCCURRENCE OF COMMUNITY MEMBER
+=======
+Community Facet
+>>>>>>> Stashed changes
+
+```{r}
+
+pWS = pWS %>% mutate(roommate = ifelse(nonsealOccCountBinned == "0", 0, 1))
+
+
+communityFacet = pWS %>% ggplot(aes(x = covArea, y = sealPres
+                                  
+                                    )) + 
+  geom_jitter(height = .05, col = "#5D695C") + 
+  #scale_color_manual(values = habCols) + 
+  stat_smooth(method = "glm", 
+              col = "#5D695C",
+              method.args = list(family = "binomial"),
+              alpha = 0.1) + 
+  #labs(title = "Cover Object Area vs. Talladega Seal Salamander Presence/Absence") + 
+  xlab("Cover Object Area") + 
+  ylab("Seal Salamander Presence/Absence") + 
+  theme_bw() + 
+  #facet_wrap(~nonsealOccCountBinned, labeller = labeller(nonsealOccCountBinned = as_labeller(occupantLabs))) +
+  theme(text = element_text(family = "Times",
+    size = 20
+    ),
+        #legend.position = "none", 
+        #removing the ugly gray box behind the facet labels
+        strip.background = element_rect(fill = "transparent", color = "black"), 
+        strip.placement = "outside", 
+        strip.text = element_text(color = "black"),
+         panel.background = element_rect(fill='transparent'),
+        plot.background = element_rect(fill='transparent', color=NA))
+
+communityFacet
+
+# ggsave(plot = communityFacet, filename = "../outputs/Figs_HerpConBio/Fig6_LogisticCommunityFacet.pdf")
+
+```
+
+
+```{r}
+
+pWS %>% filter(sealPres == 1) %>% ggplot() + 
+  geom_boxplot(aes(x = as.factor(roommate), y = covArea)) +
+  geom_jitter(aes(x = as.factor(roommate), y = covArea)) 
+
+
+pWS %>% filter(sealPres==1) %>% ggplot() + 
+  geom_density(aes(x = covArea, fill = as.factor(roommate)), alpha = 0.5)
+
+
+pWS %>% ggplot() + 
+  geom_density(aes(x = covArea, fill = as.factor(sealPres)), alpha = 0.5) + 
+  facet_wrap(~as.factor(roommate)) + theme_bw()
+
+```
+
+```{r}
+
+mic_4.1 = glmmTMB(sealPres ~ nonsealSalCount * covArea + (1|PlotCode), data = pWS, family = "binomial")
+summary(mic_4.1)
+
+resid_mic_4.1 = simulateResiduals(mic_4.1)
+plot(resid_mic_4.1)
+
+```
+
+Here, we expand the above analysis to include crayfish and nonseal
+salamanders
+
+```{r}
+pWS %>% ggplot(aes(x = nonsealOccCount, y = sealPres)) + 
+  geom_jitter(aes(col = hab), height = .1) + 
+  scale_color_manual(values = habCols) + 
+  stat_smooth(method = "glm", method.args = list(family = "binomial")) + 
+  theme_bw()
+```
+
+When we include crayfish in this analysis, we can see that nearly every cover object with an area greater than 1000 cm^2 has some occupant. This is reflected in the model below, which finds a significant interaction between count of non-seal salamander occupants and the size of the cover item. 
+
+
+```{r}
+pWS %>% ggplot(aes(x = covArea, y = sealPres)) + 
+  geom_jitter(aes(col = as.factor(nonsealOccCount)), height = .1) + 
+  #scale_color_manual(values = habCols) + 
+  stat_smooth(method = "glm", method.args = list(family = "binomial")) + 
+  theme_bw()
+```
+
+```{r}
+pWS %>% ggplot() + 
+  geom_bar(aes(x= nonsealOccCount))
+
+
+pWS %>% group_by(nonsealOccCount) %>% summarize(count = n())
+
+
+
+
+mic_4.2 = glmmTMB(sealPres ~ nonsealOccCount * covArea + (1|PlotCode), data = pWS, family = "binomial")
+summary(mic_4.2)
+
+resid_mic_4.2 = simulateResiduals(mic_4.2)
+plot(resid_mic_4.2)
+
+
+```
+
+
+## Cover Type
+```{r}
+points %>% filter(Species == "DCHE") %>%
+  ggplot() + 
+  geom_bar(aes(x = factor(CoverType, levels = c("R", "B", "W"))), fill = "#5D695C") +
+  theme_minimal() + 
+  ylab("Count") + 
+  xlab("Cover Item Identity")
+
+```
+
+------------------------------------------------------------------------
+
+# Plot Figures
+
+I am working with the following predictor variables at the stream level: 
+
+
+* Daily mean stream temperature
+* Dail mean stream temperature amplitude
+* Dissolved oxygen
+* water depth
+* channel height
+* stream declivity
+* watershed area
+* % imperv
+
+```{r}
+plots = plots %>% mutate(sealStreamLabel = ifelse(sealStream == 1, "Seal Salamanders \n Detected", "Seal Salamanders \n Not Detected"))
+
+
+
+```
+
+
+## Daily mean stream temperature
+
+```{r}
+
+meantemp = ggplot(data = plots, aes(y = sealStreamLabel, 
+                   x = dailyMeanTemp)) + 
+    geom_boxplot(outlier.shape = NA, 
+               fill = "transparent") + 
+  geom_jitter(size = 3, height = 0.1, 
+               col = "#5D695C") + 
+ # labs(title = "Comparison of temperature variaton in streams with and without seal salamanders") +
+  xlab("Daily Mean Temperature (°C)") + 
+  ylab("") + 
+  theme_bw()
+
+meantemp
+
+
+```
+
+## Daily temp amplitude
+
+```{r}
+tempAmp = ggplot(data = plots, aes(y = sealStreamLabel, 
+                   x = dailyMeanAmpl)) + 
+    geom_boxplot(outlier.shape = NA, 
+               fill = "transparent") + 
+  geom_jitter(size = 3, height = 0.1, 
+               col = "#5D695C") + 
+#  labs(title = "Temperature variation in streams with and without Seal Salamanders") +
+  xlab("Daily Mean Temp. Amplitude (°C)") + 
+  ylab("") + 
+  theme_bw()
+
+tempAmp
+
+```
+
+
+## DO
+
+```{r}
+DOplot = ggplot(data = plots, aes(y = sealStreamLabel, 
+                   x = DO)) + 
+    geom_boxplot(outlier.shape = NA, 
+               fill = "transparent") + 
+  geom_jitter(size = 3, height = 0.1, 
+               col = "#5D695C") + 
+  #labs(title = "Comparison of temperature variaton in streams with and without seal salamanders") +
+  xlab("Dissolved Oxygen (%)") + 
+  ylab("") + 
+  theme_bw()
+
+DOplot
+
+```
+
+
+
+## depth
+
+```{r}
+depthPlot = ggplot(data = plots, aes(y = sealStreamLabel, 
+                   x = depth)) + 
+    geom_boxplot(outlier.shape = NA, 
+               fill = "transparent") + 
+  geom_jitter(size = 3, height = 0.1, 
+               col = "#5D695C") + 
+  #labs(title = "Comparison of temperature variaton in streams with and without seal salamanders") +
+  xlab("Mean Water Depth (cm)") + 
+  ylab("") + 
+  theme_bw()
+
+depthPlot
+
+```
+
+
+
+
+## channel height
+
+```{r}
+cHeiPlot = ggplot(data = plots, aes(y = sealStreamLabel, 
+                   x = cHei)) + 
+    geom_boxplot(outlier.shape = NA, 
+               fill = "transparent") + 
+  geom_jitter(size = 3, height = 0.1, 
+               col = "#5D695C") + 
+ # labs(title = "Comparison of temperature variaton in streams with and without seal salamanders") +
+  xlab("Mean Channel Height (cm)") + 
+  ylab("") + 
+  theme_bw()
+
+cHeiPlot
+
+
+```
+
+
+## decliv
+
+```{r}
+declivPlot = ggplot(data = plots, aes(y = sealStreamLabel, 
+                   x = Declivity)) + 
+    geom_boxplot(outlier.shape = NA, 
+               fill = "transparent") + 
+  geom_jitter(size = 3, height = 0.1, 
+               col = "#5D695C") + 
+  #labs(title = "Comparison of temperature variaton in streams with and without seal salamanders") +
+  xlab("Declivity (°)") + 
+  ylab("") + 
+  theme_bw()
+
+declivPlot
+
+
+```
+
+
+## watershed area
+
+```{r}
+wsaPlot = ggplot(data = plots, aes(y = sealStreamLabel, 
+                   x = DrainageArea)) + 
+    geom_boxplot(outlier.shape = NA, 
+               fill = "transparent") + 
+  geom_jitter(size = 3, height = 0.1, 
+               col = "#5D695C") + 
+  #labs(title = "Comparison of temperature variaton in streams with and without seal salamanders") +
+  xlab(expression(paste("Watershed Area (", m^{2}, ")"))) + 
+  ylab("") + 
+  theme_bw()
+
+wsaPlot
+
+
+```
+
+
+## imperv
+
+```{r}
+impervPlot = ggplot(data = plots, aes(y = sealStreamLabel, 
+                   x = imperv)) + 
+    geom_boxplot(outlier.shape = NA, 
+               fill = "transparent") + 
+  geom_jitter(size = 3, height = 0.1, 
+               col = "#5D695C") + 
+ # labs(title = "Comparison of temperature variaton in streams with and without seal salamanders") +
+  xlab("Impervious Surface Cover (%)") + 
+  ylab("") + 
+  theme_bw()
+
+impervPlot
+
+
+```
+
+## cover
+
+```{r}
+plots = plots %>% mutate(covDens = covCount/areaSearched)
+covPlot = ggplot(data = plots, aes(y = sealStreamLabel, 
+                   x = covDens)) + 
+    geom_boxplot(outlier.shape = NA, 
+               fill = "transparent") + 
+  geom_jitter(size = 3, height = 0.1, 
+               col = "#5D695C") + 
+ # labs(title = "Comparison of temperature variaton in streams with and without seal salamanders") +
+  xlab(expression(paste("Cover Item Density (objects/", m^{2}, ")"))) + 
+  ylab("") + 
+  theme_bw()
+
+impervPlot
+
+
+```
+
+## dbh
+
+```{r}
+dbh = ggplot(data = plots, aes(y = sealStreamLabel, 
+                   x = meanDBH)) + 
+    geom_boxplot(outlier.shape = NA, 
+               fill = "transparent") + 
+  geom_jitter(size = 3, height = 0.1, 
+               col = "#5D695C") + 
+ # labs(title = "Comparison of temperature variaton in streams with and without seal salamanders") +
+  xlab("Mean DBH of Surrounding Trees (cm)") + 
+  ylab("") + 
+  theme_bw()
+
+dbh
+
+```
+
+```{r}
+maxdbh = ggplot(data = plots, aes(y = sealStreamLabel, 
+                   x = maxDBH)) + 
+    geom_boxplot(outlier.shape = NA, 
+               fill = "transparent") + 
+  geom_jitter(size = 3, height = 0.1, 
+               col = "#5D695C") + 
+ # labs(title = "Comparison of temperature variaton in streams with and without seal salamanders") +
+  xlab("Mean DBH of Surrounding Trees (cm)") + 
+  ylab("") + 
+  theme_bw()
+
+maxdbh
+
+dbh2 = glm(sealStream ~ meanDBH, data = plots, family = "binomial")
+summary(dbh)
+
+```
+
+## conductivity
+```{r}
+conduct = ggplot(data = plots, aes(y = sealStreamLabel, 
+                   x = Conduct)) + 
+    geom_boxplot(outlier.shape = NA, 
+               fill = "transparent") + 
+  geom_jitter(size = 3, height = 0.1, 
+               col = "#5D695C") + 
+ # labs(title = "Comparison of temperature variaton in streams with and without seal salamanders") +
+  xlab(expression(paste("Conductivity (", mu, "S/cm)"))) + 
+  ylab("") + 
+  theme_bw()
+
+conduct
+
+cd = glm(sealStream ~ Conduct, data = plots, family = "binomial")
+
+AICc(cd)
+summary(cd)
+
+tab_model(cd)
+```
+
+
+
+```{r}
+
+plot_grid(meantemp,  tempAmp,  declivPlot, DOplot, conduct, depthPlot, cHeiPlot, covPlot, dbh, wsaPlot, impervPlot, ncol = 2, scale = 0.9)
+
+```
+
+```{r}
+plots %>% ggplot(aes(x =Declivity, y = PlotCode)) + 
+  geom_bar(stat = "identity")
+
+glimpse(plots)
+
+width = glm(sealStream ~ cWid, data = plots, family = "binomial")
+summary(width)
+
+```
+
+
+
+
+
+
+# OLD PLOT FIGURES
+
+## How do watershed-influences of urbanization affect seal salamander presence and density?
+
+I am interested in how watershed-level characteristics affect seal
+salamander density. I used ArcGIS to calculate the percent coverage of
+impervious surface upstream from my plots and incorporated that here.
+
+The other variable that I am using here is daily temperature variation,
+which I believe serves as a proxy for the realized effect of impervious
+surface cover on the landscape given the way that pavement leads to heat
+islands, and how water flowing over pavement and into streams will
+absorb heat. I am hoping that greater fluctuations will also represent
+pulses of water through the landscape.
+
+```{r, message = F}
+
+ggplot(plots, aes(x = imperv, y = sealStream)) +
+  geom_hline(yintercept = 0)+
+    stat_smooth(method = "glm", method.args = list(family = "binomial"), 
+              alpha = 0.10, col = "#5D695C", fill = "#5D695C") + 
+  #geom_smooth(method = "lm", alpha = 0.10, col = "#5D695C", fill = "#5D695C") + 
+  geom_point(aes(col = imperv), size = 4) + 
+ # ylim(-.1, 0.6) +
+  theme_bw() + 
+   # theme(legend.position = "bottom") + 
+  labs(title = "Seal salamander density vs. impervious surface cover") + 
+  xlab("Watershed Imperviousness (%)") + 
+  ylab("Seal salamander presence")
+  #ylab(expression(paste("Talladega Seal Salamander Density (", m^{2}, ")")))
+
+```
+
+```{r, message = F}
+
+# ggplot(plots, aes(x = dailyMeanAmpl, y = DCHE_m2)) +
+#   geom_hline(yintercept = 0)+
+#   geom_smooth(method = "lm", alpha = 0.10, col = "#5D695C", fill = "#5D695C") + 
+#   geom_point(aes(col = dailyMeanAmpl), size = 4) + 
+#   scale_color_gradient(low = "darkblue"#"#202A44"
+#                           , high = "orange" ) + 
+# 
+#  # ylim(-.1, 0.6) +
+#   theme_bw() + 
+#   #  theme(legend.position = "bottom") + 
+#   labs(title = "Seal salamander density vs. temperature variation", color = " ") + 
+#   xlab("Average daily stream temperature range (°C)") + 
+#   ylab(expression(paste("Talladega Seal Salamander Density (", m^{2}, ")")))
+
+
+
+#this one is a logistic one
+
+
+x = ggplot(plots, aes(x = dailyMeanAmpl, y = sealStream)) +
+    geom_hline(yintercept = 0)+
+  geom_point(aes(col = dailyMeanTemp), size = 3) +
+   scale_color_gradient(low = "darkblue"#"#202A44"
+                           , high = "orange" ) +
+  stat_smooth(method = "glm", method.args = list(family = "binomial"), 
+              alpha = 0.10, col = "#5D695C", fill = "#5D695C") + 
+  theme_bw() +
+  theme(legend.position = c(0.165, 0.3),
+    legend.background = element_rect(fill = "white", color = "black")) + 
+ # theme(legend.position = "bottom") + 
+  labs(title = "Salamander Presence/Absence vs. Temperature Variation", 
+       color = "Daily Mean\nTemperature (°C)")+ 
+  ylab("Talladega Seal Salamander Presence") + 
+  xlab("Daily Mean Stream Temperature Amplitude (°C)")
+
+
+x
+
+x + theme(
+  text = element_text(size = 14, face = "bold")
+)
+
+
+
+```
+
+```{r}
+ggplot(data = plots) + 
+    geom_boxplot(outlier.shape = NA, 
+               aes(x = as.factor(sealStream), 
+                   y = avgDiVar), fill = "transparent") + 
+  geom_jitter(size = 3, width = 0.25, 
+              aes(x = as.factor(sealStream), 
+                  y = avgDiVar, 
+                  col = as.factor(sealStream))) + 
+  scale_color_manual(values = colsBi) + 
+  labs(title = "Comparison of temperature variaton in streams with and without seal salamanders", 
+       col = "Seal presence") +
+  theme_bw()
+
+```
+
+DCHE \~ Temperature variation + imperviousness
+
+```{r}
+
+plots_1.1 = glmmTMB(sealStream ~ dailyMeanAmpl + imperv, family = "binomial", data = plots)
+summary(plots_1.1)
+
+
+resid_plots_1.1= simulateResiduals(plots_1.1)
+plot(resid_plots_1.1)
+```
+
+When we fit this model including temperature variation and watreshed
+imperviousness, we get a positive estimate for the effect of watershed
+imperviousness. I think this is likely because of site CCC in Wesley
+Woods which is piped under the conference center and has a lot of seal
+salamanders. From conversations with John, construction here was pretty
+good about stormwater infrastructure so I am not sure how I should feel
+about this.
+
+
+
+Below is a model that just has temperature variation.
+
+```{r}
+plots_1.1.1 =  glmmTMB(sealStream ~ dailyMeanAmpl,family = "binomial",  data = plots)
+summary(plots_1.1.1)
+
+resid_plots_1.1.1 = simulateResiduals(plots_1.1.1)
+plot(resid_plots_1.1.1)
+```
+
+```{r}
+plots_1.1.2 =  glmmTMB(sealStream ~ dailyMeanTemp,family = "binomial",  data = plots)
+summary(plots_1.1.2)
+
+resid_plots_1.1.1 = simulateResiduals(plots_1.1.2)
+plot(resid_plots_1.1.2)
+```
+
+
+
+## Landcover dataset
+
+I was able to extract data from the NLCD Landfire analysis for each
+watershed, but I am not sure at this point what exactly to analyze.
+However, I do at least want to have a look at whether watershed area is
+a relevant predictor since it seems like that may be relevant to the
+lack of seals in some of the higher order streams.
+
+```{r}
+plots = plots %>%
+  mutate(perDev = devLow_perc + devMed_perc + devOpen_perc) %>%
+  mutate(perDist = perDev + dryLob_perc + field_perc + pine_perc, 
+         sumDist = sumDev + dryLob_sum + field_sum + pine_sum, 
+         perMature = mesic_perc + dryHard_perc, 
+         sumMature = mesic_sum + dryHard_sum, 
+         perForest = dryLob_perc + pine_perc + mesic_perc + dryHard_perc + dryMixed_perc, 
+         sumForest = dryLob_sum + pine_sum + mesic_sum + dryHard_sum + dryMixed_sum, 
+         watershedArea = dryLob_sum + pine_sum + mesic_sum + dryHard_sum + dryMixed_sum + field_sum + devLow_sum + devMed_sum + devOpen_sum
+           )
+```
+
+
+
+
+```{r}
+
+ggplot(plots, aes(x = watershedArea, y = sealStream)) +
+  geom_hline(yintercept = 0)+
+   stat_smooth(method = "glm", method.args = list(family = "binomial"), 
+              alpha = 0.10, col = "#5D695C", fill = "#5D695C") + 
+  geom_point( size = 4) + 
+ # ylim(-.1, 0.6) +
+  theme_bw() + 
+    #theme(legend.position = "bottom") + 
+  labs(title = "Seal salamander presence vs. Watershed Area") + 
+  xlab(expression(paste("Watershed Area (", m^{2}, ")"))) + 
+  ylab("seal salamander presence")
+  #ylab(expression(paste("Talladega Seal Salamander Density (", m^{2}, ")")))
+
+
+plots_4.1 = glmmTMB(sealStream ~ watershedArea, data = plots, family = "binomial")
+summary(plots_4.1)
+
+resid_plots_4.1 = simulateResiduals(plots_4.1)
+plot(resid_plots_4.1)
+
+```
+
+
+```{r}
+plots_4.2 = glmmTMB(sealStream ~sumDev, data = plots, family = "binomial")
+summary(plots_4.2)
+
+resid_plots_4.2 = simulateResiduals(plots_4.2)
+plot(resid_plots_4.2)
+
+
+ggplot(plots, aes(x = sumDev, y = dailyMeanAmpl)) + 
+  geom_point() + 
+  geom_smooth(method = "lm")
+
+
+devArea = ggplot(plots, aes(x = sumDev, y = sealStream)) +
+  geom_hline(yintercept = 0)+
+   stat_smooth(method = "glm", method.args = list(family = "binomial"), 
+              alpha = 0.10, col = "#5D695C", fill = "#5D695C") + 
+  geom_point( size = 4, aes(col = as.factor(sealStream))) + 
+  scale_color_manual(values = colsBi, guide = "none") +
+ # ylim(-.1, 0.6) +
+  theme_bw() + 
+    #theme(legend.position = "bottom") + 
+  labs(title = "Salamander Presence/Absence vs. Developed Area") + 
+  xlab(expression(paste("Developed Area Upstream in the Watershed (", m^{2}, ")"))) + 
+  ylab("Talladega Seal Salamander Presence") + 
+  theme( text = element_text(size = 14, face = "bold"))
+  
+  #ylab(expression(paste("Talladega Seal Salamander Density (", m^{2}, ")")))
+
+
+
+
+grid = plot_grid(x, devArea, align = "v")
+```
+
+## What influence does stream-level geomorphology have on salamander presence?
+
+Dr. Beck suggested checking to see if band-level variables were
+spatially autocorrelated, so I plotted them out below. It does appear
+that way, so I have incorporated the stream geomorphology
+
+```{r}
+
+bands %>%
+ggplot(aes(x = bandNum, y = cHei)) + 
+  geom_bar(aes(fill = StreamID), stat = "identity") + 
+  theme_bw() + 
+  facet_wrap(~StreamID) + 
+  labs(title = "Channel height across sites")
+
+bands %>%
+ggplot(aes(x = bandNum, y = depth)) + 
+  geom_bar(aes(fill = StreamID), stat = "identity") + 
+  theme_bw() + 
+  facet_wrap(~StreamID) + 
+  labs(title = "water depth across sites")
+
+```
+
+Channel height appears to be relatively important in understanding seal
+sal density at each of these streams
+
+```{r}
+plots %>% ggplot(aes(x = cHei, y = sealStream)) + 
+      geom_hline(yintercept = 0)+
+    stat_smooth(method = "glm", method.args = list(family = "binomial"), 
+              alpha = 0.10, col = "#5D695C", fill = "#5D695C") + 
+  geom_point(size = 4, col = "#5D695C") + 
+  xlab("Channel Height")+ 
+  ylab("Seal salamander presence") + 
+  theme_bw()
+
+
+plots_3.1 = glmmTMB(sealStream ~ cHei, family = "binomial",  data = plots)
+summary(plots_3.1)
+```
+
+
+```{r}
+plots_5.1 = glmmTMB(sealStream ~ covCount, family = "binomial",  data = plots)
+summary(plots_5.1)
+
+```
+
+## How do turbidity and conductivity correlate with salamander density?
+
+I am not analyzing turbidity data right now because I think that I was
+not fast enough to collect all of my samples in time for samples to
+accurately reflect differences in turbidity between sites. As a part of
+this, I have two conductivity datasets (one reflecting when I sampled
+each stream and one relflecting when I took turbidity samples).
+
+We can see that the correlation between these is not that strong...
+which is interesting.
+
+```{r}
+plots%>% select(altCond, Conduct) %>% cor()
+
+plots %>% ggplot(aes(x = altCond, y = Conduct)) + geom_smooth(method = "lm") + geom_point() + theme_bw()
+
+```
