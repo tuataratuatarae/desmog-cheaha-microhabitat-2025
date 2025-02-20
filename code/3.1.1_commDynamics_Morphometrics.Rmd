@@ -160,7 +160,7 @@ exp(-0.32)
 
 ```{r}
 
-dist = pointsDCHE %>%
+dist = pointsSealStream %>%
   group_by(Species) %>%
   mutate(spCount = n()) %>%
   ungroup() %>%
@@ -182,7 +182,7 @@ FIG12 = dist %>% filter(Species %in% c("CAM", "DCHE", "DPER", "ECIR")) %>%
   labs(fill = "") + 
   theme_minimal() +
   ylab("Proportion of Observed Animals") + 
-  title("Proportions of Commonly Observed Species Observed in Different Habitat Types") + 
+  #title("Proportions of Commonly Observed Species Observed in Different Habitat Types") + 
   theme(panel.grid.major = element_blank(),
     panel.grid.minor = element_blank()) + theme( text = element_text(size = 12, family = "Times"))
 
@@ -237,7 +237,7 @@ fig11 = dper2 %>%
     panel.grid.minor = element_blank(), 
     text = element_text(size = 20, family = "Times")
   ) + 
-  coord_fli
+  coord_flip()
 
 fig11
 
@@ -246,22 +246,11 @@ fig11
 # Dusky stream habitat use
 
 
-First, I need to clean data
-
-I need to add reach-level 
-
-```{r}
-bandRocks = read_excel("../data/PlotData_Spring2023.xlsx", sheet = "MicrohabitatAvailability2")
-
-
-```
-
-
 ### are there differing counts of rocks across streams?
 
 ```{r}
 
-rockMod = lm(rockCount ~ PlotCode, data = bandRocks)
+rockMod = lm(covCount ~ StrmID, data = bands)
 
 summary(rockMod)
 
@@ -274,7 +263,7 @@ summary(x)
 
 ```{r}
 
-bandRocks = bandRocks %>% mutate(SubplotHab = paste(SubplotCode, HabitatType)) %>% select(SubplotHab, rockCount)
+bandRocks = bands %>% mutate(SubplotHab = paste(SubplotCode, HabitatType)) %>% select(SubplotHab, rockCount)
 
 dper = dper %>% mutate(SubplotHab = paste(SubplotCode, toupper(hab)))
 
@@ -513,7 +502,7 @@ From this figure, it does look like larger seal salamanders use more aquatic hab
 ```{r}
 
 
-habUseDCHE = glmmTMB(mmTL ~ (1|StrmID), data = pointsDCHE2)
+habUseDCHE = glmmTMB(mmSVL ~ (1|StrmID), data = pointsDCHE2)
 summary(habUseDCHE)
 
 tab_model(habUseDCHE)
@@ -534,18 +523,18 @@ ggplot(data = pointsDCHE2, aes(x = mmTL, y = mmSVL)) +
   geom_smooth(method = "lm") + 
   geom_point()
 
-habUseDCHE2_TL = glmmTMB(mmTL ~ hab + covArea + (1|StrmID), data = pointsDCHE2)
+habUseDCHE2_SVL = glmmTMB(mmSVL ~ hab + covArea + (1|StrmID), data = pointsDCHE2)
 
-diagnose(habUseDCHE2)
+diagnose(habUseDCHE2_SVL)
 
 
-summary(habUseDCHE2)
+summary(habUseDCHE2_SVL)
 
-tab_model(habUseDCHE2)
+tab_model(habUseDCHE2_SVL)
 
 habUseDCHE2
 
-anova(habUseDCHE, habUseDCHE2, test = "Chisq")
+anova(habUseDCHE, habUseDCHE2_SVL, test = "Chisq")
 
 ```
 
@@ -735,6 +724,8 @@ pWS = pointsWide %>% filter(PlotCode %in% sealStreams & CoverType %in% c("R", "W
   mutate(hab = as.factor(hab)) %>% filter(hab %in% c("stream", "margin"))
 
 ```
+
+
 It does not look like there's a difference in background points
 ```{r}
 
@@ -763,9 +754,6 @@ plots %>% select(Date, PlotCode) %>% arrange(Date)
 
 
 
-
-
-
 ```{r}
 
 
@@ -788,133 +776,5 @@ pWS %>% ggplot(aes(x = hab, y = covArea)) + geom_boxplot() + geom_jitter() +
 
 
 
-# Stream Temps & Sensitivity
 
-Looking at whether there are differences in salamander body condition based on stream temperatures
-```{r}
-pointsPlots %>% filter(Species %in% c("DCHE", "DPER", "ECIR", "CAM")) %>%
-  ggplot(aes(x = reorder(PlotCode, dailyMeanTemp), y = gMass/mmTL)) + 
-  geom_boxplot() + 
-  geom_jitter() + 
-  facet_wrap(~Species)
-
-
-pointsPlots %>% filter(Species %in% c("DCHE", "DPER", "ECIR", "CAM")) %>%
-  ggplot(aes(x = dailyMeanAmpl, y = gMass/mmSVL)) + 
-  geom_point() + 
-  geom_smooth(method = "lm")+ 
-  facet_wrap(~Species)
-  
-```
-
-I am not really seeing anything here
-
-
-#
-
-
-
-## Size changes in response to presence of seal salamanders
-This is a look at whether other salamanders will have different morphological characteristics in the presence of seal salamanders
-```{r}
-
-points %>% filter(Species == "DCHE") %>%
-  ggplot(aes(x = as.numeric(mmSVL)) ) + 
-  geom_histogram(bins = 30)
-
-
-points %>% filter(Species %in% c("DPER", "DCHE") & sealStream == 1) %>%
-  ggplot(aes(x = as.numeric(mmSVL), fill = Species)) + 
-  geom_histogram(position= "identity", alpha = 0.75, bins = 20)+ 
-  scale_fill_manual(values = cols) + 
-  labs(title = "Histogram of Desmognathus snout-vent lengths from streams\n where seal salamanders were detected")
-
-```
-
-### We might expect duskys to have smaller body sizes or worse body condition at sites where there are seal salamanders
-```{r}
-
-points = points %>% mutate(condition = as.numeric(gMass)/as.numeric(mmSVL))
-
-points %>% filter(Species %in% c("DPER")) %>%
-  ggplot(aes(x = condition, fill = as.factor(sealStream))) + 
-  geom_histogram(position= "identity", alpha = 0.5, bins = 20)
-
-
-
-```
-
-
-```{r}
-
-pointsDPER = points %>% filter(Species == "DPER")
-
-
-smallDusky = glmmTMB(condition ~ as.factor(sealStream) + (1|PlotCode), data = pointsDPER)
-
-summary(smallDusky)
-
-```
-
-Are seals eating dusky tails??
-
-```{R}
-
-points %>% filter(Species %in% c("DPER")) %>%
-  ggplot(aes(x = (mmTL-mmSVL)/mmSVL, y = as.factor(sealStream))) + 
-  geom_boxplot()+ geom_jitter()
-
-tailless = glmmTMB(tailScore ~ as.factor(sealStream) + (1|PlotCode), data = pointsDPER)
-
-summary(tailless)
-
-tailless2 = glmmTMB((mmTL-mmSVL)/mmSVL ~ as.factor(sealStream) + (1|PlotCode), data = pointsDPER)
-
-summary(tailless2)
-```
-
-
-
-```{r}
-
-
-points %>% filter(Species %in% c("DPER")) %>%
-  ggplot(aes(x = mmTL-mmSVL, y = as.factor(sealStream))) + 
-  geom_boxplot() + 
-  geom_jitter()
-
-
-points %>% filter(Species %in% c("DPER")) %>%
-  ggplot(aes(x = mmTL-mmSVL, fill = as.factor(sealStream))) + 
-    geom_histogram(position= "identity", alpha = 0.5)
-
-
-# points = points %>% mutate(mmTail = mmTL-mmSVL)
-
-
-
-
-
-points %>% 
-  filter(Species == "DPER") %>%
-  ggplot(aes(x = as.factor(sealStream), y = mmTL-mmSVL)) + 
-  geom_boxplot() + 
-  geom_jitter() 
-
-
-
-
-```
-
-
-
-
-```{r}
-
-pointsDCHE %>% ggplot(aes(x = hab, y = mmSVL)) + 
-  geom_boxplot() + 
-  geom_jitter()
-
-
-```
 
