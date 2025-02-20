@@ -53,6 +53,8 @@ cols = c('CHOW' = '#0c9896',
          'CAM' = "#c7a891"
          )
 
+habCols = c("stream" = "#9BC4BC", "margin" = "#4B5043", "terrestrial" = "#598218")
+
 ```
 
 
@@ -85,112 +87,22 @@ points %>%
 
 ```{r}
 #creating a subset of data that includes plot identity and cover object density
-covDens = df2 %>% dplyr::select(PlotCode, covDens)
+#covDens = df2 %>% dplyr::select(PlotCode, covDens)
 
 
 #appending cover object density at the plot level to the point-level dataset
-df3 = points %>% full_join(covDens, by = "PlotCode")
-
-#creating the dataset NNs, which filters for occupied cover close to water, and calculates the standardized NN distances by dividing distances by cover density; groups crayfish together
-NNs = df3 %>% 
-  #filtering to only icnlude occupied cover in stream or marginal microhabitat
-  filter(Occupied == 1 & distWater < 50) %>%
-  #calculating standard occ distances by dividing occ dist by cover density
-  mutate(stdOccDist = NN_occ_cm/covDens, 
-         #calculating standard vac distances by dividing vac dist by cover density
-         stdVacDist = NN_vac_cm/covDens, 
-         #calculating standard occ distance by subtracting vac distance from occ distance
-         stdOccDist2 = NN_occ_cm-NN_vac_cm)%>%
-  #reducing taxonomic resolution of crayfish observations
-  mutate(Species = ifelse(Species == "CHOW", "CAM", Species))
-
-#calculating the median standardized occupied cover distance
-x = median(NNs$stdOccDist, na.rm = T)
-```
-
-
-
-
-
-# Checkerboard Matrices
-
-```{r}
-#editing string to create band numbers (1,2,3) that are the same across streams
-bands = bands %>% 
-  mutate(StreamID = sub("\\-.*", "", PlotCode), 
-         bandNum = str_sub(SubplotCode, -1)) 
-
-#pivoting the bands dataset to be long (by species)
-bandsLong = bands %>%   mutate(CAM = CAM + CHOW) %>% pivot_longer(cols = c("CAM", "CHOW", "DCHE", "DPER", "ECIR", "EGUT", "PSRUB", "SAL"), names_to = "Species", values_to = "Count")
-
-#creating a thing with species that have 0 observations
-bandZeroes = bandsLong %>%
-  filter(Species %in% c("PSRUB", "ECIR", "DCHE", "DPER", "CAM")) %>%
-  filter(Count == 0)
-
-#creating an all-streams checkerboard matrix that frankly does not wllow us to interpret anything
-bandsLong %>%
-  filter(Species %in% c("DCHE", "ECIR", "PSRUB", "EGUT", "DPER", "CAM", "CHOW")) %>%
-ggplot() + 
-  geom_tile(
-             aes(x = SubplotCode, y = Species, fill = Species, 
-                 alpha = Count), col = "white", 
-             lwd = 1.5,
-            linetype = 1) + 
-        #scale_fill_viridis_c() + 
-      scale_fill_manual(values = cols) +
-  scale_alpha(range = c(0, 1)) + 
-  #    scale_color_manual(values = cols) +
-  # geom_point(data = zeroes,
-  #            aes(x = PlotCode, y = Species), 
-  #            col = "darkgray") + 
-    # geom_tile(data = bandZeroes,
-    #          aes(x = PlotCode, y = Species),
-    #           fill = "white", col = "white",
-    #          lwd = 1.5, #alpha = 0.01,
-    #         linetype = 1) +
-  theme_bw() + 
-  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
-  
-  theme(legend.position = "bottom") + 
-  coord_fixed() +
-  #coord_flip() + 
-  labs(title = "Abundances of Salamanders and Crayfish Observed Across Field Sites")
-
-
+#df3 = points %>% full_join(covDens, by = "PlotCode")
 
 ```
 
 
-# And they were roommates... (a look into refuge sharing)
 
 
-Here, I want to visualize whether there are differences in body size that correlated with the count of individuals under a cover item
-```{r}
-#creating a varaible occcount that counts the number of individuals under a cover item
-occCount = pointsWide%>% dplyr::select(PointCode, SAL, DCHE, ECIR, CHOW, DPER, PSRUB, CAM, NA., D, EGUT, salCount, crayCount, occupantCount, sealPres)
-
-points = points %>% full_join(occCount, by = "PointCode")
 
 
-points %>% 
-  filter(Species %in% c("DCHE", "DPER", "ECIR", "CAM")) %>%
-  ggplot(aes(x = as.factor(occupantCount), y = mmSVL)) + 
-  geom_boxplot(fill = "transparent") + 
-  geom_jitter(aes(col = Species)) + 
-  scale_color_manual(values = cols) + 
-  facet_wrap(~Species) + 
-  theme_bw()
 
 
-```
 
-
-This is a co-occurrence matrix
-```{r}
-points %>% filter(occupantCount > 1) %>% dplyr::select(Species, DCHE, ECIR, CHOW, DPER, PSRUB, CAM)
-
-```
 
 
 
@@ -205,10 +117,81 @@ points = points  %>%
   mutate(hab = as.factor(hab)) %>%
   mutate(distDepth = distWater - cmDepth)
 # I am going to create a color palette to make this easier to interpret
-habCols = c("stream" = "#9BC4BC", "margin" = "#4B5043", "terrestrial" = "#598218")
+
 ```
 
-Is the proportion of duskies using stream/marginal habitat different depending on whether there are seals in the stream?
+# Do seals utilize more aquatic habitat than other species
+
+```{r}
+
+points %>% filter(sealStream==1) %>% 
+  mutate(Species = ifelse(Species == "CHOW", "CAM", Species)) %>% 
+    filter(Species %in% c("CAM", "DCHE", "DPER", "ECIR")) %>% group_by(Species) %>% summarize(count = n())
+
+
+pointsSealStream = points %>% filter(sealStream == 1) %>% filter(hab != "terrestrial") %>% 
+  mutate(Species = ifelse(Species == "CHOW", "CAM", Species)) %>% filter(Species %in% c("CAM", "DCHE", "DPER", "ECIR")) %>% 
+  mutate(Species = ifelse(Species == "CAM", "xCAM", Species))
+
+pointsSealStream %>% group_by(Species) %>% summarize(count = n())
+
+
+```
+
+
+```{r}
+pointsSealStream = pointsSealStream %>% mutate(habBin = ifelse(hab == "stream", 1, 0))
+
+nullComp = compHab = glmmTMB(habBin ~ (1|StrmID), data = pointsSealStream, family = "binomial")
+
+
+compHab = glmmTMB(habBin ~ Species + (1|StrmID), data = pointsSealStream, family = "binomial")
+summary(compHab)
+
+tab_model(compHab)
+
+
+anova(nullComp, compHab, test = "Chisq")
+
+exp(-0.32)
+```
+
+## visualization
+
+```{r}
+
+dist = pointsDCHE %>%
+  group_by(Species) %>%
+  mutate(spCount = n()) %>%
+  ungroup() %>%
+  group_by(Species, hab) %>%
+  mutate(habProp = n() / spCount) %>%
+  ungroup()
+
+
+FIG12 = dist %>% filter(Species %in% c("CAM", "DCHE", "DPER", "ECIR")) %>%
+  ggplot(aes(x = Species, y = habProp, fill = factor(hab, levels = c("stream", "margin", "terrestrial")))) +
+  geom_bar(stat = "identity", position = "fill",
+           aes(col = factor(hab, levels = c("stream", "margin", "terrestrial"))
+               )) + 
+  scale_fill_manual(values = habCols) + 
+    scale_color_manual(values = habCols) +
+  guides(color="none") + 
+  scale_y_continuous(labels = scales::percent) +
+  geom_text(aes(y = 1.05, label = paste("n = ", spCount))) + 
+  labs(fill = "") + 
+  theme_minimal() +
+  ylab("Proportion of Observed Animals") + 
+  title("Proportions of Commonly Observed Species Observed in Different Habitat Types") + 
+  theme(panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()) + theme( text = element_text(size = 12, family = "Times"))
+
+FIG12
+
+
+```
+
+# Is the proportion of duskies using stream/marginal habitat different depending on whether there are seals in the stream?
 ```{r}
 points %>% filter(Species == "DPER") %>% 
   ggplot() + 
@@ -481,26 +464,7 @@ I have multiple size metrics:
  * mass in grams
  * tail score
 
-## Cover area/salamander size relationship
-```{r}
 
-lenNull = glmmTMB(TL ~ (1|StrmID), data = pointsDCHE2)
-covAreaDCHE = glmmTMB(mmSVL/gMass ~ covArea + (1|StrmID), data = pointsDCHE2)
-
-fixef(covAreaDCHE)
-
-covAreaDCHE
-summary(covAreaDCHE)
-
-r2(covAreaDCHE)
-
-tab_model(covAreaDCHE)
-
-confint(covAreaDCHE)
-
-anova(massNull, covAreaDCHE)
-
-```
 
 I expect that larger seal salamanders will occupy larger cover objects
 
@@ -511,11 +475,15 @@ We also expect larger salamanders to occupy more aquatic habitat
 # FIGURE 8: LINEAR REGRESSION PLOT SHOWING SEAL SALAMANDER BODY SIZE VS COVER OBJECT AREA
 ```{r}
 
+plot(mmSVL ~ mmTL, data = pointsDCHE2)
+
+summary(lm(mmSVL ~ mmTL, data = pointsDCHE2))
+
 lr = ggplot(pointsDCHE2, aes(x = covArea, y = mmSVL)) + 
   geom_smooth( method = "lm", col= "#5D695C", alpha = 0.5) + 
-  geom_point(#aes(col = hab),
+  geom_point(aes(col = hab),
              size = 2) + 
-  #scale_color_manual(values = habCols) + 
+  scale_color_manual(values = habCols) + 
   labs(color = "") + 
   xlab(expression(paste("Cover Object Area (", cm^{2}, ")"))) + 
   ylab("Snout-Vent Length (mm)") +
@@ -545,7 +513,7 @@ From this figure, it does look like larger seal salamanders use more aquatic hab
 ```{r}
 
 
-habUseDCHE = glmmTMB(gMass ~ hab + (1|PlotCode), data = pointsDCHE2)
+habUseDCHE = glmmTMB(mmTL ~ (1|StrmID), data = pointsDCHE2)
 summary(habUseDCHE)
 
 tab_model(habUseDCHE)
@@ -558,9 +526,18 @@ tab_model(habUseDCHE)
 
 When you just include all seals with morphometrics there is a marginal significance, but when you remove the two observations from burrows there is a very strong significance
 
+# salamander size ~ cov area and habitat
+
 ```{r}
 
-habUseDCHE2 = glmmTMB(gMass ~ hab + covArea + (1|PlotCode), data = pointsDCHE2)
+ggplot(data = pointsDCHE2, aes(x = mmTL, y = mmSVL)) + 
+  geom_smooth(method = "lm") + 
+  geom_point()
+
+habUseDCHE2_TL = glmmTMB(mmTL ~ hab + covArea + (1|StrmID), data = pointsDCHE2)
+
+diagnose(habUseDCHE2)
+
 
 summary(habUseDCHE2)
 
@@ -568,7 +545,7 @@ tab_model(habUseDCHE2)
 
 habUseDCHE2
 
-anova(massNull, habUseDCHE2)
+anova(habUseDCHE, habUseDCHE2, test = "Chisq")
 
 ```
 
