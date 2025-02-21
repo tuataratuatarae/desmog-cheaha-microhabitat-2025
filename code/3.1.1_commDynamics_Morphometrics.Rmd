@@ -41,6 +41,8 @@ pointsWide = read.csv("../data/pointsWide_2024-12-22.csv")
 
 bands = read.csv("../data/bands_2025-01-29.csv")
 
+bandRocks = read.csv("../data/MicrohabAvail_2025-02-20.csv")
+
 
 cols = c('CHOW' = '#0c9896', 
         'PSRUB' = "#C95945",
@@ -246,11 +248,29 @@ fig11
 # Dusky stream habitat use
 
 
+<<<<<<< Updated upstream
+=======
+First, I need to clean data
+
+I need to add reach-level 
+
+```{r}
+#bandRocks = read_excel("../data/PlotData_Spring2023.xlsx", sheet = "MicrohabitatAvailability2")
+
+
+```
+
+
+>>>>>>> Stashed changes
 ### are there differing counts of rocks across streams?
 
 ```{r}
 
+<<<<<<< Updated upstream
 rockMod = lm(covCount ~ StrmID, data = bands)
+=======
+rockMod = lm(rockCount ~ StrmID, data = bandRocks)
+>>>>>>> Stashed changes
 
 summary(rockMod)
 
@@ -305,9 +325,11 @@ exp(-1.0884824)
 Testing whether habitat utilization is dependent on the presence of 
 D. cheaha in the stream
 ```{r}
-dperNull = glmmTMB(hab2 ~ (1|PlotCode), data = dper2, family = "binomial")
-dperMod = glmmTMB(hab2 ~ sealStream + rockCount + (1|PlotCode), data = dper2, family = "binomial")
-dperSimpl = glmmTMB(hab2 ~ sealStream + (1|PlotCode), data = dper2, family = "binomial")
+dperNull = glmmTMB(hab2 ~ (1|StrmID), data = dper2, family = "binomial")
+
+dperMod = glmmTMB(hab2 ~ sealStream + rockCount + (1|StrmID), data = dper2, family = "binomial")
+
+dperSimpl = glmmTMB(hab2 ~ sealStream + (1|StrmID), data = dper2, family = "binomial")
 
 AICc(dperMod)
 AICc(dperSimpl)
