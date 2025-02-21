@@ -266,11 +266,8 @@ I need to add reach-level
 
 ```{r}
 
-<<<<<<< Updated upstream
-rockMod = lm(covCount ~ StrmID, data = bands)
-=======
 rockMod = lm(rockCount ~ StrmID, data = bandRocks)
->>>>>>> Stashed changes
+
 
 summary(rockMod)
 
@@ -283,7 +280,7 @@ summary(x)
 
 ```{r}
 
-bandRocks = bands %>% mutate(SubplotHab = paste(SubplotCode, HabitatType)) %>% select(SubplotHab, rockCount)
+bandRocks = bandRocks %>% mutate(SubplotHab = paste(SubplotCode, HabitatType)) %>% select(SubplotHab, rockCount)
 
 dper = dper %>% mutate(SubplotHab = paste(SubplotCode, toupper(hab)))
 
