@@ -7,6 +7,7 @@ output:
     theme: flatly
     toc: yes
     toc_float: true
+    code_folding: hide
 editor_options: 
   chunk_output_type: console
 ---
@@ -21,10 +22,6 @@ library(ggeffects)
 library(MuMIn)
 library(lme4)
 library(readxl)
-
-```
-
-```{r}
 
 ```
 
@@ -85,26 +82,6 @@ points %>%
   theme_bw()
 
 ```
-
-
-```{r}
-#creating a subset of data that includes plot identity and cover object density
-#covDens = df2 %>% dplyr::select(PlotCode, covDens)
-
-
-#appending cover object density at the plot level to the point-level dataset
-#df3 = points %>% full_join(covDens, by = "PlotCode")
-
-```
-
-
-
-
-
-
-
-
-
 
 
 
@@ -248,8 +225,6 @@ fig11
 # Dusky stream habitat use
 
 
-<<<<<<< Updated upstream
-=======
 First, I need to clean data
 
 I need to add reach-level 
@@ -261,7 +236,6 @@ I need to add reach-level
 ```
 
 
->>>>>>> Stashed changes
 ### are there differing counts of rocks across streams?
 
 ```{r}
@@ -282,7 +256,9 @@ summary(x)
 
 bandRocks = bandRocks %>% mutate(SubplotHab = paste(SubplotCode, HabitatType)) %>% select(SubplotHab, rockCount)
 
-dper = dper %>% mutate(SubplotHab = paste(SubplotCode, toupper(hab)))
+dper = dper %>% separate(SubplotCode, into = c("Stream2", "plot", "band"), sep = "-")
+
+dper = dper %>% mutate(SubplotHab = paste0(StrmID, "-", band, " ", toupper(hab)))
 
 dper = dper %>% filter(hab %in% c("margin", "stream")) %>% left_join(bandRocks, by = "SubplotHab")
 
@@ -382,18 +358,7 @@ summary(dperMod)
 
 
 
-
-
-
-
 ```{R}
-
-
-dperSSsinCov = glmmTMB(hab2 ~ sealStream + (1|PlotCode), data = dper3, family = "binomial")
-
-anova(dperNull, dperMod, test = "Chisq")
-
-anova(dperMod, dperSSsinCov, test = "Chisq")
 
 summary(dperMod)
 
@@ -407,20 +372,6 @@ check_singularity(dperMod)
 
 
 ```
-
-Another component we included in our model was whether habitat utilization depended on cover item location. In the mode, cover density was marginally significant, suggesting that marginal habitat was more likely to be utilized in areas with higher cover item densities. However, from looking at the plot this does not seem to be fully independent of whether there are seals in the stream
-```{r}
-dper3 %>% ggplot(aes(y = covDens, x  = hab)) + 
-  geom_boxplot() + 
-  geom_jitter(aes(col = as.factor(sealStream))) + 
-  theme_bw()
-
-
-
-```
-
-
-
 
 
 
@@ -483,9 +434,6 @@ We also expect larger salamanders to occupy more aquatic habitat
 # FIGURE 8: LINEAR REGRESSION PLOT SHOWING SEAL SALAMANDER BODY SIZE VS COVER OBJECT AREA
 ```{r}
 
-plot(mmSVL ~ mmTL, data = pointsDCHE2)
-
-summary(lm(mmSVL ~ mmTL, data = pointsDCHE2))
 
 lr = ggplot(pointsDCHE2, aes(x = covArea, y = mmSVL)) + 
   geom_smooth( method = "lm", col= "#5D695C", alpha = 0.5) + 
@@ -521,226 +469,58 @@ From this figure, it does look like larger seal salamanders use more aquatic hab
 ```{r}
 
 
-habUseDCHE = glmmTMB(mmSVL ~ (1|StrmID), data = pointsDCHE2)
+habUseDCHE_null = glmmTMB(mmSVL ~ (1|StrmID), data = pointsDCHE2)
+
+
+
+habUseDCHE = glmmTMB(mmSVL ~ hab + covArea + (1|StrmID), data = pointsDCHE2)
+
+diagnose(habUseDCHE)
+
+
 summary(habUseDCHE)
 
 tab_model(habUseDCHE)
 
+habUseDCHE
 
+anova(habUseDCHE_null, habUseDCHE, test = "Chisq")
 
 
 
 ```
-
-When you just include all seals with morphometrics there is a marginal significance, but when you remove the two observations from burrows there is a very strong significance
-
-# salamander size ~ cov area and habitat
-
-```{r}
-
-ggplot(data = pointsDCHE2, aes(x = mmTL, y = mmSVL)) + 
-  geom_smooth(method = "lm") + 
-  geom_point()
-
-habUseDCHE2_SVL = glmmTMB(mmSVL ~ hab + covArea + (1|StrmID), data = pointsDCHE2)
-
-diagnose(habUseDCHE2_SVL)
-
-
-summary(habUseDCHE2_SVL)
-
-tab_model(habUseDCHE2_SVL)
-
-habUseDCHE2
-
-anova(habUseDCHE, habUseDCHE2_SVL, test = "Chisq")
-
-```
-
-Creating a figure to show how larger salamanders are more likely to utilize more aquatic habitat
-# Figure 9: Cover Object POsition vs. DCHE Body size
-```{r}
-
-pointsDCHE2 %>%
-  ggplot(aes(x = hab, y = gMass)) + 
-  geom_boxplot(outlier.shape = NA, fill = "transparent") + 
-  geom_jitter(aes(col = hab), size = 3, width = 0.2) + 
-  scale_color_manual(values = habCols) + 
-  ylab("Mass (g)") + 
-  xlab("Habitat Type") + 
-  theme_bw() + 
-  labs(title = expression(
-    paste(italic("Desmognathus cheaha"), " Mass by Cover Object Position")), 
-    col = "") + 
-  theme(text = element_text(size = 12), 
-         panel.background = element_rect(fill='transparent'),
-        plot.background = element_rect(fill='transparent', color=NA)) + 
-  coord_flip()
-```
-
-
-```{r}
-cor(pointsDCHE2$mmSVL, pointsDCHE2$mmTL)
-
-cor(pointsDCHE2$mmSVL, pointsDCHE2$gMass)
-
-cor(pointsDCHE2$mmTL, pointsDCHE2$gMass)
-
-pointsDCHE2 %>% mutate(tailLen = mmTL-mmSVL) %>%
-  ggplot(aes(x = as.factor(tailScore), y = tailLen/mmTL)) + 
-  geom_boxplot() + 
-  geom_jitter()
-  
-
-```
-
-
-
-
-## Cover Area and Habitat Type Interaction
-```{r}
-
-pointsDCHE3 = pointsDCHE %>% filter(covArea < 2000)
-
-DCHE3Margin = pointsDCHE3 %>% filter(hab == "margin")
-DCHE3Stream = pointsDCHE3 %>% filter(hab == "stream")
-
-covMargin = glmmTMB(gMass ~ covArea + (1|PlotCode), data = DCHE3Margin, family = "gaussian")
-summary(covMargin)
-
-covStream = glmmTMB(gMass ~ covArea + (1|PlotCode), data = DCHE3Stream, family = "gaussian")
-summary(covStream)
-
-marginDF <- predict_response(covMargin, terms = "covArea")
-
-plot(marginDF)
-streamDF = predict_response(covStream, terms = "covArea")
-
-```
-
-
-```{r}
-sinOUT = ggplot() + 
-  geom_smooth(data = marginDF, aes(x = x, y = predicted), method = "lm",
-              col =  "#4B5043") + 
-  geom_ribbon(data = marginDF, aes(x = x, ymin = conf.low, ymax = conf.high), 
-              alpha = 0.1, fill = "#4B5043")+ 
-  geom_smooth(data = streamDF, aes(x = x, y = predicted), method = "lm",
-              col = "#9BC4BC") +
-  geom_ribbon(data = streamDF, aes(x = x, ymin = conf.low, ymax = conf.high), 
-              alpha = 0.2, fill = "#9BC4BC")+
-  geom_point(data = pointsDCHE3, aes(x = covArea, y = gMass, col = hab),
-             size = 2) + 
-  scale_color_manual(values = habCols) + 
-  labs(color = "") + 
-  xlab(expression(paste("Cover Object Area (", cm^{2}, ")"))) + 
-  ylab("Mass (g)") +
-  labs(title = "Cover Object Area vs. Salamander Mass")+
-  #facet_wrap(~hab) + 
-  theme_bw() + 
-  expand_limits(x = 2500) + 
-theme(strip.background = element_rect(fill = "transparent", color = "black"), 
-      text = element_text(size = 14))
-
-
-sinOUT
-
-```
-
-
-```{r}
-
-DCHE2Margin = pointsDCHE2 %>% filter(hab == "margin")
-DCHE2Stream = pointsDCHE2 %>% filter(hab == "stream")
-
-covMargin2 = glmmTMB(gMass ~ covArea + (1|PlotCode), data = DCHE2Margin, family = "gaussian")
-summary(covMargin)
-
-covStream2 = glmmTMB(gMass ~ covArea + (1|PlotCode), data = DCHE2Stream, family = "gaussian")
-summary(covStream)
-
-marginDF2 <- predict_response(covMargin2, terms = "covArea")
-
-plot(marginDF2)
-streamDF2 = predict_response(covStream2, terms = "covArea")
-
-plot(streamDF2)
-
-
-```
-
-
-
-
-```{r}
-cumOUT = ggplot() + 
-  geom_smooth(data = marginDF2, aes(x = x, y = predicted), method = "lm",
-              col =  "#4B5043") + 
-  geom_ribbon(data = marginDF2, aes(x = x, ymin = conf.low, ymax = conf.high), 
-              alpha = 0.1, fill = "#4B5043")+ 
-  geom_smooth(data = streamDF2, aes(x = x, y = predicted), method = "lm",
-              col = "#9BC4BC") +
-  geom_ribbon(data = streamDF2, aes(x = x, ymin = conf.low, ymax = conf.high), 
-              alpha = 0.2, fill = "#9BC4BC")+
-  geom_point(data = pointsDCHE2, aes(x = covArea, y = gMass, col = hab),
-             size = 2) + 
-  scale_color_manual(values = habCols) + 
-  labs(color = "") + 
-  xlab(expression(paste("Cover Object Area (", cm^{2}, ")"))) + 
-  ylab("Mass (g)") +
-  labs(title = "Cover Object Area vs. Salamander Mass")+
-  #facet_wrap(~hab) + 
-  theme_bw() + 
-  extend_limit(x = 2500) + 
-theme(strip.background = element_rect(fill = "transparent", color = "black"), 
-      text = element_text(size = 14))
-
-cumOUT
-
-```
-
-```{r}
-
-plot_grid(sinOUT, cumOUT, ncol = 1)
-
-```
-
-
-```{r}
-pointsDCHE2 %>%
-  ggplot(aes(x = covArea, y = gMass)) + 
-  
-  #scale_color_manual(values = cols) +
-  geom_smooth(method = "lm", col = "#5D695C", alpha = 0.1) +
-  geom_point(aes(col = hab)) + 
-  scale_color_manual(values = habCols) + 
-  labs(color = "") + 
-  xlab(expression(paste("Cover Object Area (", cm^{2}, ")"))) + 
-  ylab("Mass (g)") +
-  labs(title = "Cover Object Area vs. Salamander Mass")+
-  #facet_wrap(~hab) + 
-  theme_bw() + 
-theme(strip.background = element_rect(fill = "transparent", color = "black"), 
-      text = element_text(size = 14))
-
-```
-
-
-
-
 
 
 
 ## Are cover area and position autocorrelated?
 
 ```{r}
-sealStreams = c("CCC-1", "DEEP-1", "FERN-1", "HMR-1", "FOAM-1", "WEEP-1", "HEAT-3")
+sealStreams = c("STRM01", "STRM02", "STRM04", "STRM06", "STRM07", "STRM08", "STRM10")
 
-pWS = pointsWide %>% filter(PlotCode %in% sealStreams & CoverType %in% c("R", "W")) %>%  
+pWS = pointsWide %>% filter(StrmID %in% sealStreams & CoverType %in% c("R", "W")) %>%  
   mutate(hab = ifelse(distWater > 50, "terrestrial", NA)) %>%
   mutate(hab = ifelse(cmDepth > 1, "stream", hab)) %>%
   mutate(hab = ifelse(is.na(hab) == T, "margin", hab)) %>%
   mutate(hab = as.factor(hab)) %>% filter(hab %in% c("stream", "margin"))
+
+```
+
+This is available in the text as *Supplemental Table 4*
+
+```{r}
+
+
+habType = glmmTMB(covArea ~ hab + (1|StrmID), data = pWS)
+
+confint(habType)
+
+summary(habType)
+
+tab_model(habType)
+
+pWS %>% ggplot(aes(x = hab, y = covArea)) + geom_boxplot() + geom_jitter() + 
+  theme_bw()
+
 
 ```
 
@@ -753,7 +533,7 @@ sealPresLabs = c("0" = "Not Occupied by Seal Salamanders",
 
 
 
-pWS %>% filter(PlotCode %in% c(sealStreams) & hab %in% c("margin", "stream")) %>%
+pWS %>% filter(hab %in% c("margin", "stream")) %>%
   ggplot(aes(x = hab, y = covArea)) + 
   geom_boxplot(outlier.shape = NA) + 
   geom_jitter(aes(col = hab), width = 0.1, alpha = 0.5) + 
@@ -773,22 +553,7 @@ plots %>% select(Date, PlotCode) %>% arrange(Date)
 
 
 
-```{r}
 
-
-habType = glmmTMB(covArea ~ hab + (1|PlotCode), data = pWS)
-
-confint(habType)
-
-summary(habType)
-
-tab_model(habType)
-
-pWS %>% ggplot(aes(x = hab, y = covArea)) + geom_boxplot() + geom_jitter() + 
-  theme_bw()
-
-
-```
 
 
 
