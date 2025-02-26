@@ -622,6 +622,45 @@ mic_4.4 = glmmTMB(DPER ~ DCHE, data = pWS, family = "binomial")
 
 ```
 
+
+# FIG 6 LOGISTIC REGRESSION
+
+```{r}
+
+
+
+
+communityFacet = pWS %>% ggplot(aes(x = covArea, y = sealPres
+                                  
+                                    )) + 
+  geom_jitter(height = .05, col = "#5D695C") + 
+  #scale_color_manual(values = habCols) + 
+  stat_smooth(method = "glm", 
+              col = "#5D695C",
+              method.args = list(family = "binomial"),
+              alpha = 0.1) + 
+  #labs(title = "Cover Object Area vs. Talladega Seal Salamander Presence/Absence") + 
+  xlab("Cover Object Area") + 
+  ylab("Seal Salamander Presence/Absence") + 
+  theme_bw() + 
+  #facet_wrap(~nonsealOccCountBinned, labeller = labeller(nonsealOccCountBinned = as_labeller(occupantLabs))) +
+  theme(text = element_text(family = "Times",
+    size = 20
+    ),
+        #legend.position = "none", 
+        #removing the ugly gray box behind the facet labels
+        strip.background = element_rect(fill = "transparent", color = "black"), 
+        strip.placement = "outside", 
+        strip.text = element_text(color = "black"),
+         panel.background = element_rect(fill='transparent'),
+        plot.background = element_rect(fill='transparent', color=NA))
+
+communityFacet
+
+# ggsave(plot = communityFacet, filename = "../outputs/Figs_HerpConBio/Fig6_LogisticCommunityFacet.pdf")
+
+```
+
 ## Posthoc tests for microhabitat models
 ```{r}
 
