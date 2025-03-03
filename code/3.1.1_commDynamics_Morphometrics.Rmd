@@ -22,6 +22,7 @@ library(ggeffects)
 library(MuMIn)
 library(lme4)
 library(readxl)
+library(emmeans)
 
 ```
 
@@ -72,18 +73,6 @@ pointsWide %>% filter(DCHE > 1) %>% select(CoverType, DCHE)
 ```
 
 
-Creating a plot to show the size class distribution of D perlapsus based on whether they were in streams with seal salamanders
-```{r}
-points %>%
-  filter(Species %in% c('DPER')) %>%
-  ggplot(aes(x = mmSVL)) + 
-  geom_histogram(aes(fill = as.factor(sealStream)), alpha = 0.5, position = "identity", bins = 20) + 
- # facet_wrap(~sealStream.x) + 
-  theme_bw()
-
-```
-
-
 
 # Stream distance/cover position
 
@@ -110,24 +99,48 @@ points %>% filter(sealStream==1) %>%
 
 pointsSealStream = points %>% filter(sealStream == 1) %>% filter(hab != "terrestrial") %>% 
   mutate(Species = ifelse(Species == "CHOW", "CAM", Species)) %>% filter(Species %in% c("CAM", "DCHE", "DPER", "ECIR")) %>% 
-  mutate(Species = ifelse(Species == "CAM", "xCAM", Species))
+  mutate(Species = ifelse(Species == "CAM", "xCAM", Species)) %>%
+  #filtering so that we're only in the sterams where all four taxa are represented
+  filter(StrmID %in% c("STRM01", "STRM02", "STRM04", "STRM06", "STRM07", "STRM10") & Species %in% c("DCHE", "ECIR", "DPER"))
 
-pointsSealStream %>% group_by(Species) %>% summarize(count = n())
+x = pointsSealStream %>% group_by(Species, StrmID) %>% summarize(count = n())
+
+
+pointsSealStream %>% ggplot() + 
+  geom_bar(aes(x = Species)) + 
+  facet_wrap(~StrmID)
 
 
 ```
 
 
+Using this link to figure out syntax for changing effects coding
+https://bookdown.org/pingapang9/linear_models_bookdown/contrasts.html
+
 ```{r}
-pointsSealStream = pointsSealStream %>% mutate(habBin = ifelse(hab == "stream", 1, 0))
+pointsSealStream = pointsSealStream %>% mutate(habBin = ifelse(hab == "stream", 1, 0), 
+                                               Species = as.factor(Species))
 
 nullComp = compHab = glmmTMB(habBin ~ (1|StrmID), data = pointsSealStream, family = "binomial")
 
 
-compHab = glmmTMB(habBin ~ Species + (1|StrmID), data = pointsSealStream, family = "binomial")
+pointsSealStream$Species %>% contrasts()
+
+
+
+compHab = glmmTMB(habBin ~ Species + (1|StrmID), data = pointsSealStream, family = "binomial", contrasts = list(Species = "contr.sum"))
+
 summary(compHab)
 
+compHab %>% model.matrix()
+
+emmeans(compHab,"Species")
+
+confint(compHab)
+
 tab_model(compHab)
+
+car::Anova(compHab, type = "III")
 
 
 anova(nullComp, compHab, test = "Chisq")
