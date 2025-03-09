@@ -127,7 +127,16 @@ pointsSealComparison = pointsSealComparison %>% mutate(habBin = ifelse(hab == "s
                                                Species = as.factor(Species))
 
 
-compHab2 = glmmTMB(habBin ~ Species + (1|StrmID), data = pointsSealComparison, family = "binomial")
+
+
+pointsSealComparison_thin = pointsSealComparison %>% group_by(PointCode) %>% sample_n(size = 1)
+
+pointsSealComparison_thin %>% group_by(Species) %>% summarize(n())
+
+pointsSealComparison %>% group_by(Species) %>% summarize(n())
+
+
+compHab2 = glmmTMB(habBin ~ Species + (1|StrmID), data = pointsSealComparison_thin, family = "binomial")
 
 summary(compHab2)
 
