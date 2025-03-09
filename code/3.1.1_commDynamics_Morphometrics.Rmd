@@ -114,6 +114,9 @@ pointsSealStream %>% ggplot() +
 pointsSealComparison = points %>% filter(hab != "terrestrial") %>% 
   mutate(Species = ifelse(Species == "CHOW", "CAM", Species)) %>% filter(Species %in% c("DCHE", "DPER", "ECIR")) 
 
+
+pointsSealComparison %>% group_by(Species) %>% summarize(n())
+
 ```
 
 
@@ -127,20 +130,15 @@ pointsSealComparison = pointsSealComparison %>% mutate(habBin = ifelse(hab == "s
                                                Species = as.factor(Species))
 
 
-
-
-pointsSealComparison_thin = pointsSealComparison %>% group_by(PointCode) %>% sample_n(size = 1)
-
-pointsSealComparison_thin %>% group_by(Species) %>% summarize(n())
-
-pointsSealComparison %>% group_by(Species) %>% summarize(n())
-
-
-compHab2 = glmmTMB(habBin ~ Species + (1|StrmID), data = pointsSealComparison_thin, family = "binomial")
+compHab2 = glmmTMB(habBin ~ Species + (1|StrmID), data = pointsSealComparison, family = "binomial")
 
 summary(compHab2)
 
 tab_model(compHab2)
+
+nullComp2 = glmmTMB(habBin ~ (1|StrmID), data = pointsSealComparison, family = "binomial")
+
+anova(nullComp2, compHab2, test = "Chisq")
 
 ```
 
