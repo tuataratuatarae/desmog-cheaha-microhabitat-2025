@@ -111,6 +111,28 @@ pointsSealStream %>% ggplot() +
   facet_wrap(~StrmID)
 
 
+pointsSealComparison = points %>% filter(hab != "terrestrial") %>% 
+  mutate(Species = ifelse(Species == "CHOW", "CAM", Species)) %>% filter(Species %in% c("DCHE", "DPER", "ECIR")) 
+
+```
+
+
+
+regardless of co-occupancy in the stream
+- touch on differing hab use by perlapsus in the discussion
+- be really clear about what assumptions we're making
+```{r}
+
+pointsSealComparison = pointsSealComparison %>% mutate(habBin = ifelse(hab == "stream", 1, 0), 
+                                               Species = as.factor(Species))
+
+
+compHab2 = glmmTMB(habBin ~ Species + (1|StrmID), data = pointsSealComparison, family = "binomial")
+
+summary(compHab2)
+
+tab_model(compHab2)
+
 ```
 
 
@@ -128,7 +150,8 @@ pointsSealStream$Species %>% contrasts()
 
 
 
-compHab = glmmTMB(habBin ~ Species + (1|StrmID), data = pointsSealStream, family = "binomial", contrasts = list(Species = "contr.sum"))
+compHab = glmmTMB(habBin ~ Species + (1|StrmID), data = pointsSealStream, family = "binomial"#, contrasts = list(Species = "contr.treatment")
+                  )
 
 summary(compHab)
 
