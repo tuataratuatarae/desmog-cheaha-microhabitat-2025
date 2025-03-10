@@ -138,47 +138,12 @@ summary(compHab2)
 
 tab_model(compHab2)
 
-nullComp2 = glmmTMB(habBin ~ (1|StrmID), data = pointsSealComparison, family = "binomial")
+nullComp2 = glmmTMB(habBin ~ (1|StrmID), data = pointsComparisonThin, family = "binomial")
 
 anova(nullComp2, compHab2, test = "Chisq")
 
 ```
 
-
-Using this link to figure out syntax for changing effects coding
-https://bookdown.org/pingapang9/linear_models_bookdown/contrasts.html
-
-```{r}
-pointsSealStream = pointsSealStream %>% mutate(habBin = ifelse(hab == "stream", 1, 0), 
-                                               Species = as.factor(Species))
-
-nullComp = compHab = glmmTMB(habBin ~ (1|StrmID), data = pointsSealStream, family = "binomial")
-
-
-pointsSealStream$Species %>% contrasts()
-
-
-
-compHab = glmmTMB(habBin ~ Species + (1|StrmID), data = pointsSealStream, family = "binomial"#, contrasts = list(Species = "contr.treatment")
-                  )
-
-summary(compHab)
-
-compHab %>% model.matrix()
-
-emmeans(compHab,"Species")
-
-confint(compHab)
-
-tab_model(compHab)
-
-car::Anova(compHab, type = "III")
-
-
-anova(nullComp, compHab, test = "Chisq")
-
-exp(-0.32)
-```
 
 ## visualization
 
