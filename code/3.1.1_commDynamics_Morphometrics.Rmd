@@ -129,8 +129,10 @@ regardless of co-occupancy in the stream
 pointsSealComparison = pointsSealComparison %>% mutate(habBin = ifelse(hab == "stream", 1, 0), 
                                                Species = as.factor(Species))
 
+pointsComparisonThin = pointsSealComparison %>% group_by(PointCode) %>% sample_n(size = 1)
 
-compHab2 = glmmTMB(habBin ~ Species + (1|StrmID), data = pointsSealComparison, family = "binomial")
+
+compHab2 = glmmTMB(habBin ~ Species + (1|StrmID), data = pointsComparisonThin, family = "binomial")
 
 summary(compHab2)
 
