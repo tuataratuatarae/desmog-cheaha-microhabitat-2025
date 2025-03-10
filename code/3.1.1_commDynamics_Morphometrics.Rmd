@@ -129,6 +129,7 @@ regardless of co-occupancy in the stream
 pointsSealComparison = pointsSealComparison %>% mutate(habBin = ifelse(hab == "stream", 1, 0), 
                                                Species = as.factor(Species))
 
+set.seed(999)
 pointsComparisonThin = pointsSealComparison %>% group_by(PointCode) %>% sample_n(size = 1)
 
 
