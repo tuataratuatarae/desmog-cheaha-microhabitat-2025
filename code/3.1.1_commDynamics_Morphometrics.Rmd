@@ -23,6 +23,7 @@ library(MuMIn)
 library(lme4)
 library(readxl)
 library(emmeans)
+library(DT)
 
 ```
 
@@ -72,10 +73,6 @@ pointsWide %>% filter(DCHE > 1) %>% select(CoverType, DCHE)
 
 ```
 
-
-
-# Stream distance/cover position
-
 ```{r}
 #creating the cover item position variable (stream/margin/terr)
 points = points  %>% 
@@ -88,42 +85,177 @@ points = points  %>%
 
 ```
 
-# Do seals utilize more aquatic habitat than other species
+
+# Morphometrics
+
+Here, we are mostly looking at intraspecific habitat partitiioning within D cheaha
+
+## Sample Size Overview
+```{r}
+points %>% filter(Occupied == 1) %>%
+  group_by(Species, Escaped) %>%
+  summarize(n())
+```
+
+Across all of our study sites, we had 24 captures of 
+D. cheaha and 10 escapes. 
 
 ```{r}
 
-points %>% filter(sealStream==1) %>% 
-  mutate(Species = ifelse(Species == "CHOW", "CAM", Species)) %>% 
-    filter(Species %in% c("CAM", "DCHE", "DPER", "ECIR")) %>% group_by(Species) %>% summarize(count = n())
+points %>% filter(Occupied == 1 & Species == "DCHE") %>%
+  group_by(StrmID, Escaped) %>%
+  summarize(n())
+
+```
+
+When we look at a breakdown of escapes at each site, we find that we did not have any successful captures of D cheaha, at two of our sites which leaves our count of streams with successful captures at n = 5. 
+
+```{r}
+points %>% filter(Occupied ==1 & Species == "DCHE" & Escaped == "NO") %>%
+  group_by(StrmID)%>%
+  summarize(n())
+```
 
 
+```{r}
+pointsDCHE = points %>% filter(Species == "DCHE")
+
+pointsDCHE2 = pointsDCHE %>% filter(Escaped =="NO" & CoverType %in% c("R", "W")) %>%
+  mutate(rocky = per_grav + per_rock)
+
+
+
+```
+
+## linear regression of DCHE body size as a function of cover object area and location
+
+```{r}
+
+
+habUseDCHE_null = glmmTMB(mmSVL ~ (1|StrmID), data = pointsDCHE2)
+
+
+
+habUseDCHE = glmmTMB(mmSVL ~ hab + covArea + (1|StrmID), data = pointsDCHE2)
+
+summary(habUseDCHE)
+
+tab_model(habUseDCHE)
+
+habUseDCHE
+
+anova(habUseDCHE_null, habUseDCHE, test = "Chisq")
+
+
+
+```
+
+
+
+## Are cover area and position correlated?
+
+```{r}
+sealStreams = c("STRM01", "STRM02", "STRM04", "STRM06", "STRM07", "STRM08", "STRM10")
+
+pWS = pointsWide %>% filter(StrmID %in% sealStreams & CoverType %in% c("R", "W")) %>%  
+  mutate(hab = ifelse(distWater > 50, "terrestrial", NA)) %>%
+  mutate(hab = ifelse(cmDepth > 1, "stream", hab)) %>%
+  mutate(hab = ifelse(is.na(hab) == T, "margin", hab)) %>%
+  mutate(hab = as.factor(hab)) %>% filter(hab %in% c("stream", "margin"))
+
+```
+
+This is available in the text as *Supplemental Table 4*
+
+```{r}
+
+
+habType = glmmTMB(covArea ~ hab + (1|StrmID), data = pWS)
+
+confint(habType)
+
+summary(habType)
+
+tab_model(habType)
+
+pWS %>% ggplot(aes(x = hab, y = covArea)) + geom_boxplot() + geom_jitter() + 
+  theme_bw()
+
+
+```
+
+
+
+
+
+
+### FIGURE 6: LINEAR REGRESSION PLOT SHOWING SEAL SALAMANDER BODY SIZE VS COVER OBJECT AREA
+```{r}
+
+
+lr = ggplot(pointsDCHE2, aes(x = covArea, y = mmSVL)) + 
+  geom_smooth( method = "lm", col= "#5D695C", alpha = 0.5) + 
+  geom_point(aes(col = hab),
+             size = 2) + 
+  scale_color_manual(values = habCols) + 
+  labs(color = "") + 
+  xlab(expression(paste("Cover Object Area (", cm^{2}, ")"))) + 
+  ylab("Snout-Vent Length (mm)") +
+  # labs(title = expression(
+  #   paste(
+  #     "Cover Object Area vs. ", 
+  #     italic("Desmognathus cheaha"), 
+  #     " mass"
+  #     )
+  #   ))+
+  
+  #facet_wrap(~hab) + 
+  theme_bw() + 
+  expand_limits(x = 2500) + 
+theme(strip.background = element_rect(fill = "transparent", color = "black"), 
+      text = element_text(size = 20, family = "Times"), 
+       panel.background = element_rect(fill='transparent'),
+        plot.background = element_rect(fill='transparent', color=NA))
+
+
+lr
+
+```
+
+
+
+
+# Community interactions
+
+Our questions about community interactions center around the use of terrestrial vs aquatic microhaitat use
+
+
+
+## do seals utilize more aquatic habitat than other species?
+
+
+Looking at the sample size we have for this analysis
+```{r}
 pointsSealStream = points %>% filter(sealStream == 1) %>% filter(hab != "terrestrial") %>% 
   mutate(Species = ifelse(Species == "CHOW", "CAM", Species)) %>% filter(Species %in% c("CAM", "DCHE", "DPER", "ECIR")) %>% 
   mutate(Species = ifelse(Species == "CAM", "xCAM", Species)) %>%
   #filtering so that we're only in the sterams where all four taxa are represented
   filter(StrmID %in% c("STRM01", "STRM02", "STRM04", "STRM06", "STRM07", "STRM10") & Species %in% c("DCHE", "ECIR", "DPER"))
 
-x = pointsSealStream %>% group_by(Species, StrmID) %>% summarize(count = n())
-
-
-pointsSealStream %>% ggplot() + 
-  geom_bar(aes(x = Species)) + 
-  facet_wrap(~StrmID)
-
 
 pointsSealComparison = points %>% filter(hab != "terrestrial") %>% 
   mutate(Species = ifelse(Species == "CHOW", "CAM", Species)) %>% filter(Species %in% c("DCHE", "DPER", "ECIR")) 
 
 
-pointsSealComparison %>% group_by(Species) %>% summarize(n())
+pointsSealComparison %>% group_by(Species) %>% dplyr::summarize(n()) %>% DT::datatable()
 
 ```
 
 
 
-regardless of co-occupancy in the stream
-- touch on differing hab use by perlapsus in the discussion
-- be really clear about what assumptions we're making
+We are conducting this analysis using all salamander microhabitat points that aren't terrestrial, and that means disregarding co-occupancy at the stream level with other species. However, in cases where multiple salamanders occupied the same cover item, we are randomly selecting one of the observations to retain. 
+
+
 ```{r}
 
 pointsSealComparison = pointsSealComparison %>% mutate(habBin = ifelse(hab == "stream", 1, 0), 
@@ -147,16 +279,16 @@ anova(nullComp2, compHab2, test = "Chisq")
 ```
 
 
-## visualization
+### FIGURE 7
 
 ```{r}
 
 dist = pointsSealStream %>%
   group_by(Species) %>%
-  mutate(spCount = n()) %>%
+  dplyr::mutate(spCount = n()) %>%
   ungroup() %>%
   group_by(Species, hab) %>%
-  mutate(habProp = n() / spCount) %>%
+  dplyr::mutate(habProp = n() / spCount) %>%
   ungroup()
 
 
@@ -182,60 +314,11 @@ FIG12
 
 ```
 
-# Is the proportion of duskies using stream/marginal habitat different depending on whether there are seals in the stream?
-```{r}
-points %>% filter(Species == "DPER") %>% 
-  ggplot() + 
-  geom_bar(aes(x = hab)) + 
-  facet_wrap(~sealStream)
 
 
-dper = points %>% filter(Species %in% c("DPER")) %>%
-  group_by(sealStream, Species) %>%
-  dplyr::mutate(sSCount = dplyr::n()) %>%
-  ungroup() %>%
-  group_by(sealStream, hab, Species) %>%
-  dplyr::mutate(habProp = dplyr::n() / sSCount) %>%
-  ungroup()
+## Do seals and duskies partition habitat?
 
-
-```
-
-# FIGURE 11: STACKED BARPLOT SHOWING DISTRIBUTION OF D PERLAPSUS
-
-```{r}
-
-
-dper2 = dper %>% filter(hab %in% c("stream", "margin"))
-
-fig11 = dper2 %>%
-  ggplot(aes(x = as.factor(sealStream), y = habProp, fill = factor(hab, levels = c("stream", "margin", "terrestrial")))) +
-  geom_bar(stat = "identity", position = "fill",
-           aes(col = factor(hab, levels = c("stream", "margin", "terrestrial"))
-               )) + 
-  scale_fill_manual(values = habCols) + 
-    scale_color_manual(values = habCols) +
-  guides(color="none") + 
-  scale_y_continuous(labels = scales::percent) +
-  geom_text(aes(y = 1.05, label = paste("n = ", sSCount))) + 
-  labs(fill = ""#, 
-      # title = expression(paste("Cover Item Positions of ", italic("Desmognathus perlapsus")))
-       ) + 
-  theme_minimal() +
-  ylab("Proportion of Observed Animals") + 
-  xlab("Detection of Seal Salamanders in the Sampled Stream") + 
-  theme(panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(), 
-    text = element_text(size = 20, family = "Times")
-  ) + 
-  coord_flip()
-
-fig11
-
-```
-
-# Dusky stream habitat use
-
+Do duskies use more aquatic habitat in streams where we did not detect D cheaha?
 
 ### are there differing counts of rocks across streams?
 
@@ -257,13 +340,17 @@ summary(x)
 
 ```{r}
 
+
+dper = points %>% filter(Species == "DPER")
+  
+  
 bandRocks = bandRocks %>% mutate(SubplotHab = paste(SubplotCode, HabitatType)) %>% select(SubplotHab, rockCount)
 
 dper = dper %>% separate(SubplotCode, into = c("Stream2", "plot", "band"), sep = "-")
 
 dper = dper %>% mutate(SubplotHab = paste0(StrmID, "-", band, " ", toupper(hab)))
 
-dper = dper %>% filter(hab %in% c("margin", "stream")) %>% left_join(bandRocks, by = "SubplotHab")
+dper = dper %>% filter(hab %in% c("margin", "stream")) %>% left_join(bandRocks, by = "SubplotHab", relationship = "many-to-many")
 
 dper = dper %>% filter(duplicated(PointCode) == FALSE)
 
@@ -277,23 +364,6 @@ dper = dper %>% filter(duplicated(PointCode) == FALSE)
 
 dper2 = dper %>% filter(hab %in% c("stream", "margin") & CoverType %in% c("R", "W")) %>%
   mutate(hab2 = ifelse(hab == "stream", 1, 0))
-
-dper2 %>% ggplot() + 
-  geom_bar(aes(x = CoverType))
-
-glimpse(dper2)
-
-
-
-
-
-# summary(dperMod)
-#   
-# tab_model(dperMod)
-# 
-# confint(dperMod)
-
-exp(-1.0884824)
 ```
 
 
@@ -334,225 +404,49 @@ confint(dperMod)
 ```
 
 
-## Manually calculating marginal and conditional R2
-```{r}
-# mF = glmer(hab2 ~ sealStream + covDens + (1|PlotCode/bandNum), data = dper3, family = "binomial")
-
-
-# r.squaredGLMM(mF)
-# 
-# 
-# 
-# summary(mF)
-summary(dperMod)
-
-# Extraction of fitted value for the alternative model
-# fixef() extracts coefficents for fixed effects
-# mF@X returns fixed effect design matrix
-# Fixed <- fixef(mF)[2] * mF@X[, 2] + fixef(mF)[3] * mF@X[, 3] + fixef(mF)[4] * mF@X[, 4]
-# 
-# # Calculation of the variance in fitted values
-# VarF <- var(Fixed)
-# 
-# # An alternative way for getting the same result
-# VarF <- var(as.vector(fixef(mF) %*% t(mF@X)))
-
-```
-
-
-
-```{R}
-
-summary(dperMod)
-
-tab_model(dperMod)
-
-confint(dperMod)
-
-r2(dperMod)
-
-check_singularity(dperMod)
-
-
-```
-
-
-
-
-# Morphometrics
-
-## Sample Size Overview
-```{r}
-points %>% filter(Occupied == 1) %>%
-  group_by(Species, Escaped) %>%
-  summarize(n())
-```
-
-Across all of our study sites, we had 24 captures of 
-D. cheaha and 10 escapes. 
-
-```{r}
-
-points %>% filter(Occupied == 1 & Species == "DCHE") %>%
-  group_by(StrmID, Escaped) %>%
-  summarize(n())
-
-```
-
-When we look at a breakdown of escapes at each site, we find that we did not have any successful captures of D cheaha, at two of our sites which leaves our count of streams with successful captures at n = 5. 
-
-```{r}
-points %>% filter(Occupied ==1 & Species == "DCHE" & Escaped == "NO") %>%
-  group_by(StrmID)%>%
-  summarize(n())
-```
-
-
-```{r}
-pointsDCHE = points %>% filter(Species == "DCHE")
-
-pointsDCHE2 = pointsDCHE %>% filter(Escaped =="NO" & CoverType %in% c("R", "W")) %>%
-  mutate(rocky = per_grav + per_rock)
-
-
-
-```
-
-
-## Which size metrics to look at?
-I have multiple size metrics: 
- * Snout-vent length
- * total length
- * mass in grams
- * tail score
-
-
-
-I expect that larger seal salamanders will occupy larger cover objects
-
-
-## habitat changes and salamander size
-We also expect larger salamanders to occupy more aquatic habitat
-
-# FIGURE 8: LINEAR REGRESSION PLOT SHOWING SEAL SALAMANDER BODY SIZE VS COVER OBJECT AREA
-```{r}
-
-
-lr = ggplot(pointsDCHE2, aes(x = covArea, y = mmSVL)) + 
-  geom_smooth( method = "lm", col= "#5D695C", alpha = 0.5) + 
-  geom_point(aes(col = hab),
-             size = 2) + 
-  scale_color_manual(values = habCols) + 
-  labs(color = "") + 
-  xlab(expression(paste("Cover Object Area (", cm^{2}, ")"))) + 
-  ylab("Snout-Vent Length (mm)") +
-  # labs(title = expression(
-  #   paste(
-  #     "Cover Object Area vs. ", 
-  #     italic("Desmognathus cheaha"), 
-  #     " mass"
-  #     )
-  #   ))+
-  
-  #facet_wrap(~hab) + 
-  theme_bw() + 
-  expand_limits(x = 2500) + 
-theme(strip.background = element_rect(fill = "transparent", color = "black"), 
-      text = element_text(size = 20, family = "Times"), 
-       panel.background = element_rect(fill='transparent'),
-        plot.background = element_rect(fill='transparent', color=NA))
-
-
-lr
-
-```
-
-From this figure, it does look like larger seal salamanders use more aquatic habitat than smaller ones. We will test for a significant relationship here: 
+### FIGURE 8: STACKED BARPLOT SHOWING DISTRIBUTION OF D PERLAPSUS
 
 ```{r}
 
 
-habUseDCHE_null = glmmTMB(mmSVL ~ (1|StrmID), data = pointsDCHE2)
+dper = points %>% filter(Species %in% c("DPER")) %>%
+  group_by(sealStream, Species) %>%
+  dplyr::mutate(sSCount = dplyr::n()) %>%
+  ungroup() %>%
+  group_by(sealStream, hab, Species) %>%
+  dplyr::mutate(habProp = dplyr::n() / sSCount) %>%
+  ungroup()
 
 
 
-habUseDCHE = glmmTMB(mmSVL ~ hab + covArea + (1|StrmID), data = pointsDCHE2)
+dper2 = dper %>% filter(hab %in% c("stream", "margin"))
 
-diagnose(habUseDCHE)
+fig11 = dper2 %>%
+  ggplot(aes(x = as.factor(sealStream), y = habProp, fill = factor(hab, levels = c("stream", "margin", "terrestrial")))) +
+  geom_bar(stat = "identity", position = "fill",
+           aes(col = factor(hab, levels = c("stream", "margin", "terrestrial"))
+               )) + 
+  scale_fill_manual(values = habCols) + 
+    scale_color_manual(values = habCols) +
+  guides(color="none") + 
+  scale_y_continuous(labels = scales::percent) +
+  geom_text(aes(y = 1.05, label = paste("n = ", sSCount))) + 
+  labs(fill = ""#, 
+      # title = expression(paste("Cover Item Positions of ", italic("Desmognathus perlapsus")))
+       ) + 
+  theme_minimal() +
+  ylab("Proportion of Observed Animals") + 
+  xlab("Detection of Seal Salamanders in the Sampled Stream") + 
+  theme(panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(), 
+    text = element_text(size = 20, family = "Times")
+  ) 
 
-
-summary(habUseDCHE)
-
-tab_model(habUseDCHE)
-
-habUseDCHE
-
-anova(habUseDCHE_null, habUseDCHE, test = "Chisq")
-
-
-
-```
-
-
-
-## Are cover area and position autocorrelated?
-
-```{r}
-sealStreams = c("STRM01", "STRM02", "STRM04", "STRM06", "STRM07", "STRM08", "STRM10")
-
-pWS = pointsWide %>% filter(StrmID %in% sealStreams & CoverType %in% c("R", "W")) %>%  
-  mutate(hab = ifelse(distWater > 50, "terrestrial", NA)) %>%
-  mutate(hab = ifelse(cmDepth > 1, "stream", hab)) %>%
-  mutate(hab = ifelse(is.na(hab) == T, "margin", hab)) %>%
-  mutate(hab = as.factor(hab)) %>% filter(hab %in% c("stream", "margin"))
-
-```
-
-This is available in the text as *Supplemental Table 4*
-
-```{r}
-
-
-habType = glmmTMB(covArea ~ hab + (1|StrmID), data = pWS)
-
-confint(habType)
-
-summary(habType)
-
-tab_model(habType)
-
-pWS %>% ggplot(aes(x = hab, y = covArea)) + geom_boxplot() + geom_jitter() + 
-  theme_bw()
-
+fig11
 
 ```
 
 
-It does not look like there's a difference in background points
-```{r}
-
-sealPresLabs = c("0" = "Not Occupied by Seal Salamanders", 
-                "1" = "Occupied by Seal Salamanders")
-
-
-
-pWS %>% filter(hab %in% c("margin", "stream")) %>%
-  ggplot(aes(x = hab, y = covArea)) + 
-  geom_boxplot(outlier.shape = NA) + 
-  geom_jitter(aes(col = hab), width = 0.1, alpha = 0.5) + 
-  scale_color_manual(values = habCols) + 
-  ylab(expression(paste("Cover Object Area (", cm^{2}, ")"))) + 
-  xlab("Habitat Type") + 
-  labs(title = "Comparison of cover object size across habitat type", color = "") + 
-  theme_bw() + 
-  facet_wrap(~as.factor(sealPres), labeller = as_labeller(sealPresLabs)) + 
-  theme(text = element_text(size = 12, family = "Times"), 
-        strip.background = element_rect(fill = "transparent", color = "black"))
-
-
-
-plots %>% select(Date, PlotCode) %>% arrange(Date)
-```
 
 
 
