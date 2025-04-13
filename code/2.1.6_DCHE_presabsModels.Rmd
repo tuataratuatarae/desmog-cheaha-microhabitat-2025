@@ -485,7 +485,8 @@ communityFacet = pWS %>% ggplot(aes(x = covArea, y = sealPres
   geom_jitter(height = .05, col = "#5D695C") + 
   #scale_color_manual(values = habCols) + 
   stat_smooth(method = "glm", 
-              col = "#5D695C",
+              
+              aes(col = roommate),
               method.args = list(family = "binomial"),
               alpha = 0.1) + 
   #labs(title = "Cover Object Area vs. Talladega Seal Salamander Presence/Absence") + 
@@ -507,6 +508,13 @@ communityFacet = pWS %>% ggplot(aes(x = covArea, y = sealPres
 communityFacet
 
 # ggsave(plot = communityFacet, filename = "../outputs/Figs_HerpConBio/Fig6_LogisticCommunityFacet.pdf")
+
+
+
+pWS %>% ggplot(aes(x = as.factor(sealPres), y = covArea, col = roommate)) + 
+  geom_jitter() + 
+  geom_boxplot(fill = "transparent") + 
+  theme_bw()
 
 ```
 
