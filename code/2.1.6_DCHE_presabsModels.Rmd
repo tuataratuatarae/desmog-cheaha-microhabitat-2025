@@ -537,6 +537,33 @@ anova(mic_4.2, mic_4.3, test = "Chisq")
 ```
 
 -
+# site level
 
+```{r}
+
+plots = read.csv("../data/plots_2025-01-29.csv")
+
+plots = plots %>% mutate(covIndex = covCount/areaSearched)
+
+null = glm(sealStream ~ 1, data = plots, family = "binomial")
+x = glm(sealStream ~ covIndex, data = plots, family = "binomial")
+
+summary(x)
+
+
+tab_model(x)
+
+null
+x
+
+anova(null, x, test = "Chisq")
+
+```
+
+
+```{r}
+
+
+```
 
 

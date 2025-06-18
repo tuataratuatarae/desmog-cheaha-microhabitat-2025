@@ -63,7 +63,7 @@ Reading out a breakdown of how many escaped, NOID desmognathus there were:
 ```{r}
 
 
-points %>% group_by(Species, Escaped) %>% summarize(n())
+points %>% group_by(Species, Escaped) %>% dplyr::summarize(n())
 
 points %>% filter(Species %in% c("D", "SAL")) %>% select(Escaped, Species)
 
@@ -94,7 +94,7 @@ Here, we are mostly looking at intraspecific habitat partitiioning within D chea
 ```{r}
 points %>% filter(Occupied == 1) %>%
   group_by(Species, Escaped) %>%
-  summarize(n())
+  dplyr::summarize(n())
 ```
 
 Across all of our study sites, we had 24 captures of 
@@ -104,7 +104,7 @@ D. cheaha and 10 escapes.
 
 points %>% filter(Occupied == 1 & Species == "DCHE") %>%
   group_by(StrmID, Escaped) %>%
-  summarize(n())
+  dplyr::summarize(n())
 
 ```
 
@@ -113,7 +113,7 @@ When we look at a breakdown of escapes at each site, we find that we did not hav
 ```{r}
 points %>% filter(Occupied ==1 & Species == "DCHE" & Escaped == "NO") %>%
   group_by(StrmID)%>%
-  summarize(n())
+  dplyr::summarize(n())
 ```
 
 
@@ -264,7 +264,7 @@ pointsSealComparison = pointsSealComparison %>% mutate(habBin = ifelse(hab == "s
 set.seed(999)
 pointsComparisonThin = pointsSealComparison %>% group_by(PointCode) %>% sample_n(size = 1)
 
-pointsComparisonThin %>% group_by(Species) %>% summarize(n())
+pointsComparisonThin %>% group_by(Species) %>% dplyr::summarize(n())
 
 compHab2 = glmmTMB(habBin ~ Species + (1|StrmID), data = pointsComparisonThin, family = "binomial")
 
